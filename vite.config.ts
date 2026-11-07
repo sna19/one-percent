@@ -10,7 +10,10 @@ export default defineConfig({
 				runes: ({ filename }) =>
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
-			adapter: adapter()
+			adapter: adapter(),
+			// Built-in check assumes one https origin; the app is also opened by http over Tailscale.
+			// src/hooks.server.ts does the same-host check instead.
+			csrf: { trustedOrigins: ['*'] }
 		})
 	],
 	test: {
