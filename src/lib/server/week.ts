@@ -18,7 +18,14 @@ export function loadWeek(db: Db, start: DateStr, today: DateStr): WeekData {
 		.from(practices)
 		.innerJoin(goals, eq(goals.id, practices.goalId))
 		.innerJoin(categories, eq(categories.id, goals.categoryId))
-		.where(and(isNull(practices.archivedAt), isNull(goals.archivedAt), eq(goals.status, 'active')))
+		.where(
+			and(
+				isNull(practices.archivedAt),
+				isNull(goals.archivedAt),
+				isNull(categories.archivedAt),
+				eq(goals.status, 'active')
+			)
+		)
 		.orderBy(asc(practices.sortOrder), asc(practices.id))
 		.all();
 

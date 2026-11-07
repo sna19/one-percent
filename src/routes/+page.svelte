@@ -206,6 +206,7 @@
 			<p class="priority">Сегодня в приоритете: <b>{top.title}</b></p>
 		{/if}
 	{/if}
+	<a class="settings" href="/settings" data-sveltekit-reload>Настройки</a>
 </main>
 
 {#if sheet}
@@ -373,6 +374,15 @@
 		background: var(--surface);
 		border-radius: 12px;
 		font-size: 15px;
+	}
+	.settings {
+		display: block;
+		width: fit-content;
+		margin: 28px auto 0;
+		padding: 12px;
+		color: var(--muted);
+		font-size: 14px;
+		text-decoration: none;
 	}
 	.backdrop {
 		position: fixed;
