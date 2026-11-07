@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import * as schema from './schema.js';
 import { seedIfEmpty } from './seed.js';
@@ -20,6 +20,9 @@ export function openDb(path: string): { sqlite: Database.Database; db: Db } {
 	sqlite.pragma('foreign_keys = ON');
 	sqlite.pragma('busy_timeout = 5000');
 	const db = drizzle(sqlite, { schema });
+	if (!existsSync(join(migrationsDir, 'meta', '_journal.json'))) {
+		throw new Error(`migrations not found in ${migrationsDir} (cwd ${process.cwd()}); set MIGRATIONS_DIR`);
+	}
 	migrate(db, { migrationsFolder: migrationsDir });
 	return { sqlite, db };
 }
