@@ -4,6 +4,7 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import * as schema from './schema.js';
+import { seedIfEmpty } from './seed.js';
 
 /** Directory with the single data file. In Docker it is the `/data` volume. */
 export const dataDir = resolve(process.env.DATA_DIR ?? 'data');
@@ -29,6 +30,7 @@ function get() {
 	if (!opened) {
 		mkdirSync(dataDir, { recursive: true });
 		opened = openDb(dbPath);
+		seedIfEmpty(opened.db);
 	}
 	return opened;
 }

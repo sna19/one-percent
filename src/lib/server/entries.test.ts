@@ -33,3 +33,18 @@ describe('setEntry', () => {
 		expect(db.select().from(entries).all()).toHaveLength(2);
 	});
 });
+
+describe('seedIfEmpty', async () => {
+	const { seedIfEmpty } = await import('./seed.js');
+	it('creates four practices once', () => {
+		const { db } = openDb(':memory:');
+		seedIfEmpty(db);
+		seedIfEmpty(db);
+		expect(db.select().from(practices).all().map((p) => p.title)).toEqual([
+			'Итальянский',
+			'Английский вслух',
+			'HBR',
+			'Спорт'
+		]);
+	});
+});
