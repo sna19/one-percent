@@ -13,6 +13,8 @@
 	let start = $state(weekStart(todayStr()));
 	let week = $state<WeekData | undefined>();
 	let offline = $state(false);
+	/** Why the last load failed: no network, or the server answered with an error. */
+	let problem = $state<string | undefined>();
 	let queued = $state(0);
 	let sheet = $state<{ p: PracticeView; date: string; value: string } | undefined>();
 
@@ -43,16 +45,31 @@
 		const cached = await cachedWeek(s);
 		if (cached) await withPending(cached);
 		if (cached && !week && s === start) week = cached;
+		let r: Response;
 		try {
-			const r = await fetch(`/api/week?start=${s}&today=${today}`);
-			if (!r.ok || !r.headers.get('content-type')?.includes('json')) throw new Error();
+			r = await fetch(`/api/week?start=${s}&today=${today}`);
+		} catch {
+			offline = true;
+			problem = 'Нет связи с сервером';
+			if (s === start) week = cached ?? week;
+			queued = (await pending()).length;
+			return;
+		}
+		try {
+			const isJson = r.headers.get('content-type')?.includes('json');
+			if (!r.ok || !isJson) {
+				const body = isJson ? ((await r.json()).message ?? '') : '';
+				throw new Error(`Ошибка сервера ${r.status}${body ? `: ${body}` : ''}`);
+			}
 			const fresh: WeekData = await r.json();
 			await cacheWeek(fresh);
 			await withPending(fresh); // local marks not on the server yet
 			if (s === start) week = fresh;
 			offline = false;
-		} catch {
+			problem = undefined;
+		} catch (e) {
 			offline = true;
+			problem = e instanceof Error && e.message ? e.message : 'Ошибка сервера';
 			if (s === start) week = cached ?? week;
 		}
 		queued = (await pending()).length;
@@ -153,12 +170,19 @@
 		<button class="nav" onclick={() => go(1)} aria-label="Следующая неделя">›</button>
 	</header>
 
-	{#if offline}
-		<p class="status">Нет связи{queued ? ` · не отправлено: ${queued}` : ''}</p>
+	{#if offline && week}
+		<p class="status">{problem ?? 'Нет связи'}{queued ? ` · не отправлено: ${queued}` : ''}</p>
 	{/if}
 
 	{#if !week}
-		<p class="status">Загрузка…</p>
+		<div class="status">
+			{#if problem}
+				<p>{problem}</p>
+				<button class="retry" onclick={() => load()}>Повторить</button>
+			{:else}
+				<p>Загрузка…</p>
+			{/if}
+		</div>
 	{:else}
 		<div class="grid" style="--cols:{days.length}">
 			<div></div>
@@ -270,6 +294,14 @@
 		font-size: 13px;
 		font-weight: 400;
 		padding: 2px;
+		cursor: pointer;
+	}
+	.retry {
+		min-height: 44px;
+		padding: 0 20px;
+		border-radius: 10px;
+		border: 1px solid var(--line);
+		background: var(--surface);
 		cursor: pointer;
 	}
 	.status {
