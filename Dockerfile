@@ -13,6 +13,7 @@ COPY --from=build /app/build ./build
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./
 COPY scripts ./scripts
+COPY drizzle ./drizzle
 RUN mkdir -p /data && chown node:node /data
 USER node
 VOLUME /data
