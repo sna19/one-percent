@@ -1,5 +1,9 @@
 # Built by the owner's compose on the NAS (x86_64). No compose file in this repo by design.
 FROM node:22-bookworm-slim AS build
+# better-sqlite3 may compile its native module during npm ci; build tools stay in this stage only.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 make g++ \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
 RUN npm ci
