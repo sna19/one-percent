@@ -48,6 +48,12 @@ services:
 sudo chown -R 1000:1000 /volume3/docker/one-percent/data
 ```
 
+После нового коммита образ нужно пересобрать, перезапуска мало:
+```sh
+cd /volume3/docker/one-percent && sudo docker compose up -d --build
+```
+`/health` показывает время сборки (`built`): по нему видно, что работает свежий образ.
+
 Приложение слушает порт 3000; `GET /health` отвечает 200, если файл данных доступен.
 Данные — один файл `/data/one-percent.db` (на NAS: `./data/one-percent.db` рядом с compose).
 

@@ -5,8 +5,8 @@ import { getSqlite } from '#lib/server/db.js';
 export function GET() {
 	try {
 		getSqlite().prepare('select 1').get();
-		return json({ ok: true });
+		return json({ ok: true, built: __BUILD_TIME__ });
 	} catch (e) {
-		return json({ ok: false, error: String(e) }, { status: 503 });
+		return json({ ok: false, built: __BUILD_TIME__, error: String(e) }, { status: 503 });
 	}
 }
