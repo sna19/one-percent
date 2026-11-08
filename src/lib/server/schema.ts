@@ -29,12 +29,23 @@ export const goals = sqliteTable('goals', {
 	createdAt: createdAt()
 });
 
+/** How a practice is done (Spec 002): the second lens on the main screen. */
+export const formats = sqliteTable('formats', {
+	id: integer('id').primaryKey({ autoIncrement: true }),
+	name: text('name').notNull(),
+	sortOrder: integer('sort_order').notNull().default(0),
+	archivedAt: text('archived_at'),
+	createdAt: createdAt()
+});
+
 export const practices = sqliteTable('practices', {
 	id: integer('id').primaryKey({ autoIncrement: true }),
 	goalId: integer('goal_id')
 		.notNull()
 		.references(() => goals.id),
 	title: text('title').notNull(),
+	/** Optional; practices without one form the «Без формата» group. */
+	formatId: integer('format_id').references(() => formats.id),
 	unit: text('unit').notNull(),
 	minDose: real('min_dose').notNull(),
 	normDose: real('norm_dose').notNull(),

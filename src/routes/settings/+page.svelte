@@ -9,7 +9,8 @@
 	const archived = $derived([
 		...data.categories.filter((c) => c.archivedAt).map((c) => ({ kind: 'category', id: c.id, title: c.name, what: 'категория' })),
 		...data.goals.filter((g) => g.archivedAt).map((g) => ({ kind: 'goal', id: g.id, title: g.title, what: 'цель' })),
-		...data.practices.filter((p) => p.archivedAt).map((p) => ({ kind: 'practice', id: p.id, title: p.title, what: 'практика' }))
+		...data.practices.filter((p) => p.archivedAt).map((p) => ({ kind: 'practice', id: p.id, title: p.title, what: 'практика' })),
+		...data.formats.filter((f) => f.archivedAt).map((f) => ({ kind: 'format', id: f.id, title: f.name, what: 'формат' }))
 	]);
 	const catName = (id: number) => data.categories.find((c) => c.id === id)?.name ?? '—';
 	const goalTitle = (id: number) => data.goals.find((g) => g.id === id)?.title ?? '—';
@@ -56,11 +57,11 @@
 					<!-- Order is the main-screen row order: always visible, one tap per step. -->
 					<div class="order">
 						<form method="POST" action="?/move" use:enhance>
-							<input type="hidden" name="id" value={p.id} /><input type="hidden" name="dir" value="-1" />
+							<input type="hidden" name="kind" value="practice" /><input type="hidden" name="id" value={p.id} /><input type="hidden" name="dir" value="-1" />
 							<button disabled={i === 0} aria-label="{p.title}: выше">↑</button>
 						</form>
 						<form method="POST" action="?/move" use:enhance>
-							<input type="hidden" name="id" value={p.id} /><input type="hidden" name="dir" value="1" />
+							<input type="hidden" name="kind" value="practice" /><input type="hidden" name="id" value={p.id} /><input type="hidden" name="dir" value="1" />
 							<button disabled={i === active(data.practices).length - 1} aria-label="{p.title}: ниже">↓</button>
 						</form>
 					</div>
@@ -102,6 +103,47 @@
 					<summary class="add">+ Цель</summary>
 					<form method="POST" action="?/goal" use:enhance={save}>
 						{@render goalFields()}
+						<button>Добавить</button>
+					</form>
+				</details>
+			</li>
+		</ul>
+	</section>
+
+	<section>
+		<h2>Форматы</h2>
+		<ul>
+			{#each active(data.formats) as f, i (f.id)}
+				<li class="practice">
+					<details>
+						<summary>
+							<span class="title">{f.name}</span>
+							<span class="meta">{data.practices.filter((p) => !p.archivedAt && p.formatId === f.id).length}</span>
+						</summary>
+						<form method="POST" action="?/format" use:enhance={save}>
+							<input type="hidden" name="id" value={f.id} />
+							<label>Название <input name="name" value={f.name} required /></label>
+							<button>Сохранить</button>
+						</form>
+						<div class="row">{@render archiveBtn('format', f.id)}</div>
+					</details>
+					<div class="order">
+						<form method="POST" action="?/move" use:enhance>
+							<input type="hidden" name="kind" value="format" /><input type="hidden" name="id" value={f.id} /><input type="hidden" name="dir" value="-1" />
+							<button disabled={i === 0} aria-label="{f.name}: выше">↑</button>
+						</form>
+						<form method="POST" action="?/move" use:enhance>
+							<input type="hidden" name="kind" value="format" /><input type="hidden" name="id" value={f.id} /><input type="hidden" name="dir" value="1" />
+							<button disabled={i === active(data.formats).length - 1} aria-label="{f.name}: ниже">↓</button>
+						</form>
+					</div>
+				</li>
+			{/each}
+			<li>
+				<details>
+					<summary class="add">+ Формат</summary>
+					<form method="POST" action="?/format" use:enhance={save}>
+						<label>Название <input name="name" required /></label>
 						<button>Добавить</button>
 					</form>
 				</details>
@@ -176,6 +218,15 @@
 			{#if !p}<option value="" disabled selected>Выберите цель</option>{/if}
 			{#each data.goals.filter((g) => !g.archivedAt || g.id === p?.goalId) as g (g.id)}
 				<option value={g.id} selected={g.id === p?.goalId}>{g.title}</option>
+			{/each}
+		</select>
+	</label>
+	<label
+		>Формат
+		<select name="formatId">
+			<option value="" selected={!p?.formatId}>Без формата</option>
+			{#each data.formats.filter((f) => !f.archivedAt || f.id === p?.formatId) as f (f.id)}
+				<option value={f.id} selected={f.id === p?.formatId}>{f.name}</option>
 			{/each}
 		</select>
 	</label>

@@ -7,6 +7,12 @@ export interface PracticeView {
 	minDose: number;
 	normDose: number;
 	color: string;
+	goalId: number;
+	goalTitle: string;
+	/** null when the practice has no format or its format is archived. */
+	formatId: number | null;
+	formatName: string | null;
+	formatOrder: number | null;
 	createdOn: DateStr;
 	/** Last date with amount ≥ min dose, not after today. */
 	lastDone: DateStr | null;

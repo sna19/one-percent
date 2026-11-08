@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { openDb } from './db.js';
 import { seedIfEmpty } from './seed.js';
-import { InputError, loadSettings, movePractice, savePractice, setArchived } from './settings.js';
+import { InputError, loadSettings, moveItem, saveFormat, savePractice, setArchived } from './settings.js';
 import { loadWeek } from './week.js';
 
 const form = (o: Record<string, string | number>) => {
@@ -40,11 +40,42 @@ describe('settings', () => {
 	it('moves a practice up and down', () => {
 		const db = setup();
 		const order = () => loadSettings(db).practices.map((p) => p.id);
-		movePractice(db, form({ id: 3, dir: -1 }));
+		moveItem(db, form({ id: 3, dir: -1 }));
 		expect(order()).toEqual([1, 3, 2, 4]);
-		movePractice(db, form({ id: 1, dir: -1 }));
+		moveItem(db, form({ id: 1, dir: -1 }));
 		expect(order()).toEqual([1, 3, 2, 4]);
-		movePractice(db, form({ id: 1, dir: 1 }));
+		moveItem(db, form({ id: 1, dir: 1 }));
 		expect(order()).toEqual([3, 1, 2, 4]);
+	});
+});
+
+describe('formats', () => {
+	it('practice gets a format; archived format reads as none', () => {
+		const db = setup();
+		savePractice(db, form({ id: 3, title: 'HBR', goalId: 3, formatId: 3, unit: 'стр', minDose: 1, normDose: 3 }));
+		const hbr = () => loadWeek(db, '2026-11-01', '2026-11-07').practices.find((p) => p.id === 3)!;
+		expect(hbr().formatName).toBe('Чтение');
+		setArchived(db, form({ kind: 'format', id: 3 }), true);
+		expect(hbr().formatId).toBeNull();
+		savePractice(db, form({ id: 3, title: 'HBR', goalId: 3, formatId: '', unit: 'стр', minDose: 1, normDose: 3 }));
+		setArchived(db, form({ kind: 'format', id: 3 }), false);
+		expect(hbr().formatId).toBeNull();
+	});
+
+	it('creates, renames and reorders formats', () => {
+		const db = setup();
+		saveFormat(db, form({ name: 'Подкасты' }));
+		saveFormat(db, form({ id: 1, name: 'Разговор' }));
+		const names = () => loadSettings(db).formats.map((f) => f.name);
+		expect(names()).toEqual(['Разговор', 'Аудиокниги', 'Чтение', 'Спорт', 'Подкасты']);
+		moveItem(db, form({ kind: 'format', id: 5, dir: -1 }));
+		expect(names()).toEqual(['Разговор', 'Аудиокниги', 'Чтение', 'Подкасты', 'Спорт']);
+	});
+
+	it('moving skips archived neighbours', () => {
+		const db = setup();
+		setArchived(db, form({ kind: 'practice', id: 2 }), true);
+		moveItem(db, form({ id: 3, dir: -1 }));
+		expect(loadSettings(db).practices.filter((p) => !p.archivedAt).map((p) => p.id)).toEqual([3, 1, 4]);
 	});
 });

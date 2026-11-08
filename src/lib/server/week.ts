@@ -2,7 +2,7 @@ import { and, asc, between, eq, gte, isNull, lte, max, sql } from 'drizzle-orm';
 import { addDays, type DateStr } from '../dates.js';
 import type { WeekData } from '../types.js';
 import type { Db } from './db.js';
-import { categories, entries, goals, practices } from './schema.js';
+import { categories, entries, formats, goals, practices } from './schema.js';
 
 export function loadWeek(db: Db, start: DateStr, today: DateStr): WeekData {
 	const rows = db
@@ -13,11 +13,17 @@ export function loadWeek(db: Db, start: DateStr, today: DateStr): WeekData {
 			minDose: practices.minDose,
 			normDose: practices.normDose,
 			color: categories.color,
+			goalId: goals.id,
+			goalTitle: goals.title,
+			formatId: formats.id,
+			formatName: formats.name,
+			formatOrder: formats.sortOrder,
 			createdOn: sql<string>`substr(${practices.createdAt}, 1, 10)`
 		})
 		.from(practices)
 		.innerJoin(goals, eq(goals.id, practices.goalId))
 		.innerJoin(categories, eq(categories.id, goals.categoryId))
+		.leftJoin(formats, and(eq(formats.id, practices.formatId), isNull(formats.archivedAt)))
 		.where(
 			and(
 				isNull(practices.archivedAt),

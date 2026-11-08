@@ -1,7 +1,7 @@
-import { and, asc, desc, eq, isNull, max } from 'drizzle-orm';
+import { asc, eq, max } from 'drizzle-orm';
 import { paletteKeys } from '../palette.js';
 import type { Db } from './db.js';
-import { categories, goals, practices } from './schema.js';
+import { categories, formats, goals, practices } from './schema.js';
 
 export class InputError extends Error {}
 
@@ -37,6 +37,7 @@ export function loadSettings(db: Db) {
 	return {
 		categories: db.select().from(categories).orderBy(asc(categories.id)).all(),
 		goals: db.select().from(goals).orderBy(asc(goals.id)).all(),
+		formats: db.select().from(formats).orderBy(asc(formats.sortOrder), asc(formats.id)).all(),
 		practices: db.select().from(practices).orderBy(asc(practices.sortOrder), asc(practices.id)).all()
 	};
 }
@@ -65,6 +66,7 @@ export function savePractice(db: Db, f: FormData) {
 	const values = {
 		title: str(f, 'title'),
 		goalId: need(id(f, 'goalId'), 'цель'),
+		formatId: id(f, 'formatId') ?? null,
 		unit: str(f, 'unit'),
 		minDose: num(f, 'minDose'),
 		normDose: num(f, 'normDose')
@@ -78,7 +80,17 @@ export function savePractice(db: Db, f: FormData) {
 	}
 }
 
-const tables = { category: categories, goal: goals, practice: practices } as const;
+export function saveFormat(db: Db, f: FormData) {
+	const name = str(f, 'name');
+	const fid = id(f);
+	if (fid) db.update(formats).set({ name }).where(eq(formats.id, fid)).run();
+	else {
+		const [{ m }] = db.select({ m: max(formats.sortOrder) }).from(formats).all();
+		db.insert(formats).values({ name, sortOrder: (m ?? -1) + 1 }).run();
+	}
+}
+
+const tables = { category: categories, goal: goals, practice: practices, format: formats } as const;
 
 /** Archive hides an item everywhere but keeps its history; restore brings it back. */
 export function setArchived(db: Db, f: FormData, archived: boolean) {
@@ -92,28 +104,24 @@ export function setArchived(db: Db, f: FormData, archived: boolean) {
 		.run();
 }
 
-/** Swaps a practice with its active neighbour above (-1) or below (+1). */
-export function movePractice(db: Db, f: FormData) {
-	const pid = need(id(f), 'практику');
+const ordered = { practice: practices, format: formats } as const;
+
+/** Swaps a practice or a format with its active neighbour above (-1) or below (+1). */
+export function moveItem(db: Db, f: FormData) {
+	const t = ordered[(String(f.get('kind') ?? 'practice')) as keyof typeof ordered];
+	if (!t) throw new InputError('Неизвестный тип');
+	const rid = need(id(f), 'элемент');
 	const dir = Number(f.get('dir')) < 0 ? -1 : 1;
-	const cur = db.select().from(practices).where(eq(practices.id, pid)).get();
-	if (!cur) return;
-	const list = db
-		.select()
-		.from(practices)
-		.where(isNull(practices.archivedAt))
-		.orderBy(dir < 0 ? desc(practices.sortOrder) : asc(practices.sortOrder), dir < 0 ? desc(practices.id) : asc(practices.id))
-		.all();
-	const i = list.findIndex((p) => p.id === pid);
-	const other = list[i + 1];
-	if (i < 0 || !other) return;
 	db.transaction((tx) => {
 		// normalise so neighbours never share an order value
-		const all = tx.select().from(practices).orderBy(asc(practices.sortOrder), asc(practices.id)).all();
-		all.forEach((p, n) => tx.update(practices).set({ sortOrder: n * 2 }).where(eq(practices.id, p.id)).run());
-		const a = tx.select().from(practices).where(eq(practices.id, cur.id)).get()!;
-		const b = tx.select().from(practices).where(eq(practices.id, other.id)).get()!;
-		tx.update(practices).set({ sortOrder: b.sortOrder }).where(eq(practices.id, a.id)).run();
-		tx.update(practices).set({ sortOrder: a.sortOrder }).where(and(eq(practices.id, b.id))).run();
+		const all = tx.select({ id: t.id, archivedAt: t.archivedAt }).from(t).orderBy(asc(t.sortOrder), asc(t.id)).all();
+		all.forEach((r, n) => tx.update(t).set({ sortOrder: n }).where(eq(t.id, r.id)).run());
+		const i = all.findIndex((r) => r.id === rid);
+		if (i < 0 || all[i].archivedAt) return;
+		let j = i + dir;
+		while (j >= 0 && j < all.length && all[j].archivedAt) j += dir;
+		if (j < 0 || j >= all.length) return;
+		tx.update(t).set({ sortOrder: j }).where(eq(t.id, all[i].id)).run();
+		tx.update(t).set({ sortOrder: i }).where(eq(t.id, all[j].id)).run();
 	});
 }

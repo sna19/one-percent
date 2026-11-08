@@ -3,8 +3,9 @@ import { getDb } from '#lib/server/db.js';
 import {
 	InputError,
 	loadSettings,
-	movePractice,
+	moveItem,
 	saveCategory,
+	saveFormat,
 	saveGoal,
 	savePractice,
 	setArchived
@@ -29,5 +30,6 @@ export const actions = {
 	practice: run((f) => savePractice(getDb(), f)),
 	archive: run((f) => setArchived(getDb(), f, true)),
 	restore: run((f) => setArchived(getDb(), f, false)),
-	move: run((f) => movePractice(getDb(), f))
+	format: run((f) => saveFormat(getDb(), f)),
+	move: run((f) => moveItem(getDb(), f))
 };

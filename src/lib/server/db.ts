@@ -1,8 +1,8 @@
 import Database from 'better-sqlite3';
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
-import { existsSync, mkdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import * as schema from './schema.js';
 import { seedIfEmpty } from './seed.js';
 
@@ -20,11 +20,29 @@ export function openDb(path: string): { sqlite: Database.Database; db: Db } {
 	sqlite.pragma('foreign_keys = ON');
 	sqlite.pragma('busy_timeout = 5000');
 	const db = drizzle(sqlite, { schema });
-	if (!existsSync(join(migrationsDir, 'meta', '_journal.json'))) {
+	const journal = join(migrationsDir, 'meta', '_journal.json');
+	if (!existsSync(journal)) {
 		throw new Error(`migrations not found in ${migrationsDir} (cwd ${process.cwd()}); set MIGRATIONS_DIR`);
 	}
+	if (path !== ':memory:') backupBeforeMigrations(sqlite, journal, path);
 	migrate(db, { migrationsFolder: migrationsDir });
 	return { sqlite, db };
+}
+
+/** User data is the value: copy the file before a schema change touches it. */
+function backupBeforeMigrations(sqlite: Database.Database, journal: string, path: string) {
+	const total = JSON.parse(readFileSync(journal, 'utf8')).entries.length as number;
+	const hasTable = sqlite
+		.prepare("select 1 from sqlite_master where type = 'table' and name = '__drizzle_migrations'")
+		.get();
+	if (!hasTable) return; // a new, empty database
+	const { n } = sqlite.prepare('select count(*) as n from __drizzle_migrations').get() as { n: number };
+	if (n >= total) return;
+	const dir = join(dirname(path), 'backups');
+	mkdirSync(dir, { recursive: true });
+	const file = join(dir, `pre-migration-${new Date().toISOString().replace(/[:.]/g, '-')}.db`);
+	sqlite.prepare('VACUUM INTO ?').run(file);
+	console.log(`backup before ${total - n} migration(s): ${file}`);
 }
 
 let opened: ReturnType<typeof openDb> | undefined;

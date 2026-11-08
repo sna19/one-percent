@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { openDb } from './db.js';
-import { categories, entries, goals, practices } from './schema.js';
+import { categories, entries, formats, goals, practices } from './schema.js';
 import { setEntry } from './entries.js';
 
 function setup() {
@@ -46,5 +46,40 @@ describe('seedIfEmpty', async () => {
 			'HBR',
 			'Спорт'
 		]);
+	});
+});
+
+describe('migrations', async () => {
+	const fs = await import('node:fs');
+	const os = await import('node:os');
+	const path = await import('node:path');
+	const { default: Database } = await import('better-sqlite3');
+
+	it('seeds formats and backs up an existing database before a pending migration', () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'op-'));
+		const file = path.join(dir, 'one-percent.db');
+		// simulate a v0.1 database: only the first migration applied, with an entry
+		const { sqlite } = openDb(file);
+		sqlite.exec("delete from __drizzle_migrations where created_at = (select max(created_at) from __drizzle_migrations)");
+		sqlite.exec('alter table practices drop column format_id');
+		sqlite.exec('drop table formats');
+		sqlite.exec("insert into categories (name, color) values ('C', 'blue')");
+		sqlite.exec("insert into goals (title, category_id) values ('G', 1)");
+		sqlite.exec("insert into practices (goal_id, title, unit, min_dose, norm_dose) values (1, 'P', 'мин', 1, 2)");
+		sqlite.exec("insert into entries (practice_id, date, amount, updated_at) values (1, '2026-11-07', 2, 'x')");
+		sqlite.close();
+
+		const { db, sqlite: s2 } = openDb(file);
+		expect(db.select().from(formats).all().map((f) => f.name)).toEqual(['Практика языка', 'Аудиокниги', 'Чтение', 'Спорт']);
+		expect(db.select().from(entries).all()).toHaveLength(1);
+		const backups = fs.readdirSync(path.join(dir, 'backups'));
+		expect(backups).toHaveLength(1);
+		const old = new Database(path.join(dir, 'backups', backups[0]), { readonly: true });
+		expect(old.prepare('select count(*) as n from entries').get()).toEqual({ n: 1 });
+		old.close();
+		s2.close();
+		// nothing pending: no new backup
+		openDb(file).sqlite.close();
+		expect(fs.readdirSync(path.join(dir, 'backups'))).toHaveLength(1);
 	});
 });
