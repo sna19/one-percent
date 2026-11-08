@@ -46,4 +46,5 @@ npm test              # vitest
 npm run db:generate   # миграция после правки src/lib/server/schema.ts
 ```
 
-Сборка на NAS — вручную владельцем: `docker compose build && docker compose up -d`. `/health` показывает время сборки.
+Деплой: commit и push в `main` → `/work/bin/deploy one-percent` → проверить результат. `/health` показывает время сборки.
+Общие правила платформы и деплоя — `/work/CLAUDE.md`.

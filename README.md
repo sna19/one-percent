@@ -41,10 +41,8 @@ services:
 Путь запроса: sidecar Tailscale `ts-tracker` → Funnel → Caddy-замок (`127.0.0.1:8097`, пароль + cookie) → приложение (`127.0.0.1:3001`).
 Sidecar, Caddy и compose настраивает владелец, вне репозитория. Решение — в `docs/DECISIONS.md` от 2026-11-08.
 
-После нового коммита образ нужно пересобрать: перезапуск и «Собрать» в Container Manager при существующем образе его не обновляют.
-```sh
-cd /volume3/docker/one-percent && sudo docker compose build && sudo docker compose up -d
-```
+Деплой — кнопкой `/work/bin/deploy one-percent` из `claude-dev`: пересобирает образ из закоммиченного `main`,
+запускает и проверяет `/health`; при провале работает прежняя версия. Правила — в `/work/CLAUDE.md`.
 `/health` показывает время сборки (`built`): по нему видно, что работает свежий образ.
 
 Приложение слушает порт 3000; `GET /health` отвечает 200, если файл данных доступен.
