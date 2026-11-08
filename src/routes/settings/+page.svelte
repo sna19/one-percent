@@ -39,7 +39,7 @@
 		<ul>
 			{#each active(data.practices) as p, i (p.id)}
 				{@const c = catOfGoal(p.goalId)}
-				<li>
+				<li class="practice">
 					<details>
 						<summary>
 							<span class="dot" style="--c:{colorOf(c?.color ?? 'slate').light}"></span>
@@ -51,18 +51,19 @@
 							{@render practiceFields(p)}
 							<button>Сохранить</button>
 						</form>
-						<div class="row">
-							<form method="POST" action="?/move" use:enhance>
-								<input type="hidden" name="id" value={p.id} /><input type="hidden" name="dir" value="-1" />
-								<button disabled={i === 0} aria-label="Выше">↑</button>
-							</form>
-							<form method="POST" action="?/move" use:enhance>
-								<input type="hidden" name="id" value={p.id} /><input type="hidden" name="dir" value="1" />
-								<button disabled={i === active(data.practices).length - 1} aria-label="Ниже">↓</button>
-							</form>
-							{@render archiveBtn('practice', p.id)}
-						</div>
+						<div class="row">{@render archiveBtn('practice', p.id)}</div>
 					</details>
+					<!-- Order is the main-screen row order: always visible, one tap per step. -->
+					<div class="order">
+						<form method="POST" action="?/move" use:enhance>
+							<input type="hidden" name="id" value={p.id} /><input type="hidden" name="dir" value="-1" />
+							<button disabled={i === 0} aria-label="{p.title}: выше">↑</button>
+						</form>
+						<form method="POST" action="?/move" use:enhance>
+							<input type="hidden" name="id" value={p.id} /><input type="hidden" name="dir" value="1" />
+							<button disabled={i === active(data.practices).length - 1} aria-label="{p.title}: ниже">↓</button>
+						</form>
+					</div>
 				</li>
 			{/each}
 			<li>
@@ -253,6 +254,34 @@
 		background: var(--surface);
 		border-radius: 12px;
 		overflow: hidden;
+	}
+	.practice {
+		position: relative;
+	}
+	.practice summary {
+		padding-right: 104px;
+	}
+	.order {
+		position: absolute;
+		top: 2px;
+		right: 8px;
+		display: flex;
+		gap: 4px;
+	}
+	.order form {
+		padding: 0;
+	}
+	.order button {
+		min-height: 44px;
+		width: 44px;
+		padding: 0;
+		border: none;
+		background: none;
+		font-size: 18px;
+		color: var(--muted);
+	}
+	.order button:disabled {
+		opacity: 0.25;
 	}
 	li + li {
 		border-top: 1px solid var(--line);
