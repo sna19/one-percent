@@ -2,7 +2,8 @@
 	import { onMount } from 'svelte';
 	import { addDays, todayStr, weekDays, weekStart } from '#lib/dates.js';
 	import { colorOf } from '#lib/palette.js';
-	import { counts, daysWithout, depth, priority } from '#lib/rules.js';
+	import { daysWithout, depth, priority } from '#lib/rules.js';
+	import { dayScore, groupCell, groupDaysWithout, groupPractices, type Group, type Lens } from '#lib/groups.js';
 	import { cacheWeek, cachedWeek, enqueue, flush, pending } from '#lib/store.js';
 	import type { PracticeView, WeekData } from '#lib/types.js';
 
@@ -23,13 +24,52 @@
 
 	const amountOf = (pid: number, date: string) => week?.entries[pid]?.[date];
 
-	const rows = $derived(
-		(week?.practices ?? []).map((p) => {
-			const n = daysWithout(p.lastDone, p.createdOn, today);
-			return { ...p, n, doneToday: p.lastDone === today };
-		})
+	// Per-device view settings (Spec 002): lens and which groups are open.
+	const read = <T,>(k: string, fallback: T): T => {
+		try {
+			const v = localStorage.getItem(k);
+			return v ? (JSON.parse(v) as T) : fallback;
+		} catch {
+			return fallback;
+		}
+	};
+	const write = (k: string, v: unknown) => {
+		try {
+			localStorage.setItem(k, JSON.stringify(v));
+		} catch {
+			/* private mode: keep in memory only */
+		}
+	};
+	let lens = $state<Lens>(read('lens', 'goal'));
+	let open = $state<string[]>(read('open-groups', []));
+	function setLens(l: Lens) {
+		lens = l;
+		write('lens', l);
+	}
+	function toggle(key: string) {
+		open = open.includes(key) ? open.filter((k) => k !== key) : [...open, key];
+		write('open-groups', open);
+	}
+
+	const practices = $derived(week?.practices ?? []);
+	const groups = $derived(groupPractices(practices, lens));
+	const nOf = (p: PracticeView) => daysWithout(p.lastDone, p.createdOn, today);
+	// Priority is chosen among goals, whatever the lens.
+	const top = $derived(
+		priority(
+			groupPractices(practices, 'goal').map((g, i) => ({
+				id: i,
+				title: g.title,
+				n: groupDaysWithout(g, today),
+				doneToday: g.practices.some((p) => p.lastDone === today)
+			}))
+		)
 	);
-	const top = $derived(priority(rows));
+
+	function without(n: number) {
+		const w = n % 10 === 1 && n % 100 !== 11 ? 'день' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'дня' : 'дней';
+		return `${n} ${w} без`;
+	}
 
 	function label(s: string) {
 		const [, m, d] = s.split('-').map(Number);
@@ -152,8 +192,8 @@
 		};
 	});
 
-	function cellStyle(p: PracticeView, date: string) {
-		const c = colorOf(p.color);
+	function cellStyle(color: string) {
+		const c = colorOf(color);
 		return `--c-light:${c.light};--c-dark:${c.dark}`;
 	}
 </script>
@@ -184,6 +224,10 @@
 			{/if}
 		</div>
 	{:else}
+		<div class="lens" role="radiogroup" aria-label="Группировка">
+			<button role="radio" aria-checked={lens === 'goal'} class:on={lens === 'goal'} onclick={() => setLens('goal')}>По целям</button>
+			<button role="radio" aria-checked={lens === 'format'} class:on={lens === 'format'} onclick={() => setLens('format')}>По формату</button>
+		</div>
 		<div class="grid" style="--cols:{days.length}">
 			<div></div>
 			{#each days as d (d)}
@@ -193,35 +237,46 @@
 				</div>
 			{/each}
 
-			{#each rows as p (p.id)}
-				<div class="name">
-					<span>{p.title}</span>
-					{#if p.n >= 2}<small>{p.n} {p.n % 10 === 1 && p.n % 100 !== 11 ? 'день' : p.n % 10 >= 2 && p.n % 10 <= 4 && (p.n % 100 < 10 || p.n % 100 >= 20) ? 'дня' : 'дней'} без</small>{/if}
-				</div>
-				{#each days as d (d)}
-					{@const a = amountOf(p.id, d)}
-					{@const dep = depth(a, p)}
-					<button
-						class="cell"
-						class:future={d > today}
-						class:is-today={d === today}
-						data-depth={dep}
-						style={cellStyle(p, d)}
-						disabled={d > today}
-						aria-label="{p.title}, {label(d)}: {a ? `${a} ${p.unit}` : 'нет'}"
-						onpointerdown={() => down(p, d)}
-						onpointerup={() => tap(p, d)}
-						onpointerleave={cancel}
-						onpointercancel={cancel}
-						oncontextmenu={(e) => e.preventDefault()}
-					></button>
-				{/each}
+			{#each groups as g (g.key)}
+				{#if g.practices.length === 1}
+					{@const p = g.practices[0]}
+					{@render practiceRow(p, g.title, p.title !== g.title ? p.title : '', false)}
+				{:else}
+					{@const isOpen = open.includes(g.key)}
+					{@const n = groupDaysWithout(g, today)}
+					<button class="name group" onclick={() => toggle(g.key)} aria-expanded={isOpen}>
+						<svg class="chev" class:open={isOpen} viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 1.5 7 5 3.5 8.5" /></svg>
+						<span class="gtext">
+							<span>{g.title} <span class="count">{g.practices.length}</span></span>
+							{#if n >= 2}<small>{without(n)}</small>{/if}
+						</span>
+					</button>
+					{#each days as d (d)}
+						{@const c = groupCell(g, d, amountOf)}
+						<button
+							class="cell"
+							class:future={d > today}
+							class:is-today={d === today}
+							data-depth={c.depth}
+							style={cellStyle(c.color)}
+							disabled={d > today}
+							aria-label="{g.title}, {label(d)}: {isOpen ? 'свернуть' : 'раскрыть'}"
+							onclick={() => toggle(g.key)}
+						>{#if c.done > 1}<span class="badge">{c.done}</span>{/if}</button>
+					{/each}
+					{#if isOpen}
+						{#each g.practices as p (p.id)}
+							{@render practiceRow(p, p.title, '', true)}
+						{/each}
+					{/if}
+				{/if}
 			{/each}
 
 			<div class="name total">День</div>
 			{#each days as d (d)}
-				<div class="total" class:future={d > today}>
-					{#if d <= today}{rows.filter((p) => counts(amountOf(p.id, d), p)).length}/{rows.length}{/if}
+				{@const sc = dayScore(practices, d, amountOf)}
+				<div class="total" class:future={d > today} aria-label="целей: {sc.done} из {sc.total}">
+					{#if d <= today}{sc.done}/{sc.total}{/if}
 				</div>
 			{/each}
 		</div>
@@ -260,6 +315,31 @@
 		</div>
 	</div>
 {/if}
+
+{#snippet practiceRow(p: PracticeView, title: string, sub: string, indent: boolean)}
+	{@const n = nOf(p)}
+	<div class="name" class:indent>
+		<span>{title}</span>
+		{#if sub || n >= 2}<small>{[sub, n >= 2 ? without(n) : ''].filter(Boolean).join(' · ')}</small>{/if}
+	</div>
+	{#each days as d (d)}
+		{@const a = amountOf(p.id, d)}
+		<button
+			class="cell"
+			class:future={d > today}
+			class:is-today={d === today}
+			data-depth={depth(a, p)}
+			style={cellStyle(p.color)}
+			disabled={d > today}
+			aria-label="{p.title}, {label(d)}: {a ? `${a} ${p.unit}` : 'нет'}"
+			onpointerdown={() => down(p, d)}
+			onpointerup={() => tap(p, d)}
+			onpointerleave={cancel}
+			onpointercancel={cancel}
+			oncontextmenu={(e) => e.preventDefault()}
+		></button>
+	{/each}
+{/snippet}
 
 <style>
 	main {
@@ -311,7 +391,7 @@
 	}
 	.grid {
 		display: grid;
-		grid-template-columns: minmax(96px, 1.7fr) repeat(var(--cols), minmax(0, 1fr));
+		grid-template-columns: minmax(118px, 2.1fr) repeat(var(--cols), minmax(0, 1fr));
 		gap: 6px;
 		align-items: center;
 	}
@@ -406,6 +486,97 @@
 		background: var(--surface);
 		border-radius: 12px;
 		font-size: 15px;
+	}
+	.lens {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 2px;
+		padding: 2px;
+		margin: 0 0 12px;
+		border-radius: 10px;
+		background: color-mix(in oklab, var(--line) 60%, transparent);
+	}
+	.lens button {
+		min-height: 36px;
+		border: none;
+		border-radius: 8px;
+		background: none;
+		font-size: 14px;
+		color: var(--muted);
+		cursor: pointer;
+	}
+	.lens button.on {
+		background: var(--surface);
+		color: var(--text);
+		font-weight: 600;
+	}
+	button.name {
+		background: none;
+		border: none;
+		padding: 0;
+		text-align: left;
+		cursor: pointer;
+		font: inherit;
+		font-size: 14px;
+		min-height: 44px;
+		justify-content: center;
+	}
+	button.name.group {
+		flex-direction: row;
+		align-items: center;
+		justify-content: flex-start;
+		gap: 4px;
+		width: 100%;
+		min-width: 0;
+		color: var(--text);
+	}
+	.gtext {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+	}
+	.gtext small {
+		color: var(--muted);
+		font-size: 12px;
+	}
+	.chev {
+		flex: none;
+		width: 10px;
+		height: 10px;
+		fill: none;
+		stroke: var(--muted);
+		stroke-width: 1.6;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+		transform-origin: 50% 50%;
+		transition: transform 0.15s;
+	}
+	.chev.open {
+		transform: rotate(90deg);
+	}
+	.count {
+		color: var(--muted);
+		font-size: 12px;
+	}
+	.name.indent {
+		padding-left: 14px;
+		font-size: 13px;
+	}
+	.cell {
+		position: relative;
+	}
+	.badge {
+		position: absolute;
+		top: 2px;
+		right: 3px;
+		font-size: 10px;
+		font-weight: 700;
+		line-height: 1;
+		color: var(--surface);
+		font-variant-numeric: tabular-nums;
+	}
+	.cell[data-depth='0.5'] .badge {
+		color: var(--text);
 	}
 	.settings {
 		display: block;

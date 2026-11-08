@@ -9,6 +9,7 @@
 | Майлстон | Milestone |
 | Задача / практика | Practice |
 | Вид активности | ActivityType |
+| Формат | Format |
 | Слот | Slot |
 | Набор (ротация) | RotationSet |
 | Запись | Entry |
@@ -27,7 +28,9 @@ closed_at, close_note, visualization (по умолчанию от kind).
 status: `open | achieved | missed | dropped`, achieved_at; для finite — target_volume.
 У цели один текущий открытый майлстон; история сохраняется.
 
-**Practice** — goal, title, unit (pages, minutes, sessions, km…), min_dose, norm_dose,
+**Format** — name, order, archived. Как делается практика (практика языка, аудиокниги, чтение, спорт); вторая линза главного экрана.
+
+**Practice** — goal, format?, title, unit (pages, minutes, sessions, km…), min_dose, norm_dose,
 rhythm: `daily | per_period(n, week|month) | weekdays[...]`, preferred_day, slot,
 mode: `core | rotation`, rotation_set, checklist_template, activity_types (для составных), icon.
 
@@ -52,4 +55,8 @@ state: `planned | done | replaced`, replaced_activity_type?, note.
 - **WIP:** перевод цели в active запрещён, если число активных ≥ wip_limit, пока другая не закрыта (achieved / released).
 - **Инкубация:** перевод из incubating в active не раньше incubation_days (с возможностью осознанного досрочного решения).
 - **Норма finite** может рассчитываться: (target − done) / оставшиеся дни. Автоматически не повышается — только показ отставания.
+- **Строка главного экрана = цель** (Spec 002): практики цели собраны в группу, которая раскрывается тапом. Вторая линза — группы по формату (без формата — «Без формата»); отметки общие.
+- **Клетка свёрнутой группы** = максимальная глубина её практик за день; если сделано больше одной практики (≥ min), в углу их число. Тап по клетке свёрнутой группы раскрывает её, а не отмечает.
+- **«N дней без» группы** — от последней отметки любой её практики; подсказка приоритета выбирает среди целей.
+- **Счёт дня — по целям:** целей, у которых хотя бы одна практика ≥ min, из активных целей; одинаков в обеих линзах.
 - **Составные задачи:** на главном экране — одна строка; любая done/replaced запись = выполнение; глубина растёт с числом активностей. Замена плана = успех.
