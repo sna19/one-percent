@@ -32,6 +32,7 @@ services:
   app:
     build: /volume3/dev/one-percent   # путь к клону репозитория
     restart: always
+    user: "1026:100"                  # владелец файлов на NAS
     ports: ["3001:3000"]              # 3000 на NAS занят openGym
     volumes: ["./data:/data"]
 ```
@@ -42,15 +43,9 @@ services:
   но приложение не откроется без сети: service worker браузер запускает только на https.
 У каждого адреса своё хранилище офлайн-данных, поэтому на телефоне лучше держать на экране «Домой» один адрес.
 
-Процесс в контейнере работает от пользователя `node` (uid 1000), ему нужна запись в папку данных.
-Если `/health` отвечает `unable to open database file`:
+После нового коммита образ нужно пересобрать: перезапуск и «Собрать» в Container Manager при существующем образе его не обновляют.
 ```sh
-sudo chown -R 1000:1000 /volume3/docker/one-percent/data
-```
-
-После нового коммита образ нужно пересобрать, перезапуска мало:
-```sh
-cd /volume3/docker/one-percent && sudo docker compose up -d --build
+cd /volume3/docker/one-percent && sudo docker compose build && sudo docker compose up -d
 ```
 `/health` показывает время сборки (`built`): по нему видно, что работает свежий образ.
 

@@ -18,7 +18,9 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./
 COPY scripts ./scripts
 COPY drizzle ./drizzle
-RUN mkdir -p /data && chown node:node /data
+# Files from the Synology share arrive as 700 root (ACL); the app runs as the compose user (1026:100).
+# COPY --chmod needs BuildKit, which the NAS builder lacks.
+RUN chmod -R a+rX /app && mkdir -p /data && chown node:node /data
 USER node
 VOLUME /data
 EXPOSE 3000
