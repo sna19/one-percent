@@ -10,7 +10,8 @@
 		...data.categories.filter((c) => c.archivedAt).map((c) => ({ kind: 'category', id: c.id, title: c.name, what: 'категория' })),
 		...data.goals.filter((g) => g.archivedAt).map((g) => ({ kind: 'goal', id: g.id, title: g.title, what: 'цель' })),
 		...data.practices.filter((p) => p.archivedAt).map((p) => ({ kind: 'practice', id: p.id, title: p.title, what: 'практика' })),
-		...data.formats.filter((f) => f.archivedAt).map((f) => ({ kind: 'format', id: f.id, title: f.name, what: 'формат' }))
+		...data.formats.filter((f) => f.archivedAt).map((f) => ({ kind: 'format', id: f.id, title: f.name, what: 'формат' })),
+		...data.templates.filter((t) => t.archivedAt).map((t) => ({ kind: 'template', id: t.id, title: t.name, what: 'шаблон плана' }))
 	]);
 	const catName = (id: number) => data.categories.find((c) => c.id === id)?.name ?? '—';
 	const goalTitle = (id: number) => data.goals.find((g) => g.id === id)?.title ?? '—';
@@ -108,6 +109,35 @@
 				</details>
 			</li>
 		</ul>
+	</section>
+
+	<section>
+		<h2>План</h2>
+		<ul>
+			<li>
+				<form method="POST" action="?/limit" use:enhance class="limit">
+					<label
+						>Мягкий лимит практик в плане
+						<input name="limit" inputmode="numeric" value={data.planLimit ?? ''} placeholder="без лимита" />
+					</label>
+					<button>Сохранить</button>
+				</form>
+			</li>
+			{#each data.templates.filter((t) => !t.archivedAt) as t (t.id)}
+				<li>
+					<details>
+						<summary><span class="title">{t.name}</span><span class="meta">шаблон</span></summary>
+						<form method="POST" action="?/template" use:enhance={save}>
+							<input type="hidden" name="id" value={t.id} />
+							<label>Название <input name="name" value={t.name} required /></label>
+							<button>Сохранить</button>
+						</form>
+						<div class="row">{@render archiveBtn('template', t.id)}</div>
+					</details>
+				</li>
+			{/each}
+		</ul>
+		<p class="hint">Шаблоны создаются на экране плана: «Утвердить» → «Сохранить как шаблон».</p>
 	</section>
 
 	<section>
@@ -230,6 +260,17 @@
 			{/each}
 		</select>
 	</label>
+	<fieldset>
+		<legend>Обычные дни — для планирования</legend>
+		<div class="weekdays">
+			{#each [1, 2, 3, 4, 5, 6, 0] as wd (wd)}
+				<label class="wd">
+					<input type="checkbox" name="defaultDays" value={wd} checked={(p?.defaultDays ?? '').split(',').includes(String(wd))} />
+					<span>{['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'][wd]}</span>
+				</label>
+			{/each}
+		</div>
+	</fieldset>
 	<div class="three">
 		<label>Единица <input name="unit" value={p?.unit ?? ''} placeholder="мин" required /></label>
 		<label>Минимум <input name="minDose" inputmode="decimal" value={p?.minDose ?? ''} required /></label>
@@ -460,6 +501,49 @@
 	.swatch input:focus-visible + span {
 		outline: 2px solid var(--text);
 		outline-offset: 2px;
+	}
+	.weekdays {
+		display: flex;
+		gap: 6px;
+	}
+	.wd {
+		flex: 1;
+	}
+	.wd input {
+		position: absolute;
+		opacity: 0;
+	}
+	.wd span {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 40px;
+		border-radius: 8px;
+		border: 1px solid var(--line);
+		color: var(--text);
+		font-size: 14px;
+	}
+	.wd input:checked + span {
+		background: var(--text);
+		color: var(--bg);
+		border-color: var(--text);
+	}
+	.wd input:focus-visible + span {
+		outline: 2px solid var(--text);
+		outline-offset: 2px;
+	}
+	.limit {
+		flex-direction: row;
+		align-items: flex-end;
+		padding: 12px 14px;
+	}
+	.limit label {
+		flex: 1;
+	}
+	.hint {
+		font-size: 13px;
+		color: var(--muted);
+		margin: 8px 4px 0;
 	}
 	.archived {
 		display: flex;

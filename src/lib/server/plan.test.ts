@@ -78,6 +78,15 @@ describe('plan sources', () => {
 	});
 });
 
+describe('previous without a last week', () => {
+	it('falls back to usual days', () => {
+		const db = setup();
+		applySource(db, W1, W1, 'previous');
+		expect(getPlan(db, W1)!.source).toBe('default');
+		expect(getPlan(db, W1)!.items[4]).toHaveLength(3);
+	});
+});
+
 describe('plan editing', () => {
 	it('past days are locked; today and later can change', () => {
 		const db = setup();

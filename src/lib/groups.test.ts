@@ -12,6 +12,7 @@ const P = (o: Partial<PracticeView> & { id: number; goalId: number }): PracticeV
 	formatId: null,
 	formatName: null,
 	formatOrder: null,
+	defaultDays: [],
 	createdOn: '2026-11-01',
 	lastDone: null,
 	...o
@@ -65,5 +66,25 @@ describe('group cell', () => {
 describe('dayScore', () => {
 	it('counts goals, the same in both lenses', () => {
 		expect(dayScore(practices, '2026-11-07', amountOf)).toEqual({ done: 2, total: 4 });
+	});
+});
+
+describe('plan lens', async () => {
+	const { planPractices, planDayScore, planWeekSummary } = await import('./groups.js');
+	const days = ['2026-11-06', '2026-11-07'];
+	// planned: Italian practice (1) on both days, Sport gym (4) on the 7th
+	const plan = new Set(['1|2026-11-06', '1|2026-11-07', '4|2026-11-07']);
+	const isPlanned = (id: number, d: string) => plan.has(`${id}|${d}`);
+
+	it('shows planned practices and bonus ones, hides the rest', () => {
+		// marks on the 7th: 1 (planned), 2 (bonus), 4 (planned)
+		expect(planPractices(practices, days, isPlanned, amountOf).map((p) => p.id)).toEqual([1, 2, 4]);
+	});
+	it('day score counts planned goals only', () => {
+		expect(planDayScore(practices, '2026-11-07', isPlanned, amountOf)).toEqual({ done: 2, total: 2 });
+		expect(planDayScore(practices, '2026-11-06', isPlanned, amountOf)).toEqual({ done: 0, total: 1 });
+	});
+	it('week summary: planned, done of planned, bonus', () => {
+		expect(planWeekSummary(practices, days, isPlanned, amountOf)).toEqual({ planned: 3, done: 2, bonus: 1 });
 	});
 });

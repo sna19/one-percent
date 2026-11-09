@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, isNull, lt } from 'drizzle-orm';
 import { addDays, isDateStr, weekDays, weekStart, type DateStr } from '../dates.js';
+import type { PlanView, WeekSummary } from '../types.js';
 import type { Db } from './db.js';
 import {
 	appSettings,
@@ -16,19 +17,6 @@ import { InputError } from './settings.js';
 
 export type PlanSource = 'previous' | 'empty' | 'default' | `week:${string}` | `template:${number}`;
 
-export interface PlanView {
-	weekStart: DateStr;
-	status: 'draft' | 'confirmed';
-	source: string;
-	/** practiceId → planned dates */
-	items: Record<number, DateStr[]>;
-}
-
-export interface WeekSummary {
-	planned: number;
-	done: number;
-	bonus: number;
-}
 
 const weekdayOf = (d: DateStr) => new Date(`${d}T12:00:00Z`).getUTCDay();
 
@@ -109,6 +97,8 @@ function editableDays(start: DateStr, today: DateStr): DateStr[] {
  */
 export function applySource(db: Db, start: DateStr, today: DateStr, source: PlanSource) {
 	checkWeek(start);
+	// «как прошлая неделя» without a last week falls back to the practices' usual days
+	if (source === 'previous' && !planRow(db, addDays(start, -7))) source = 'default';
 	const pairs = sourcePairs(db, start, source);
 	const days = editableDays(start, today);
 	db.transaction((tx) => {

@@ -1,7 +1,8 @@
 import { asc, eq, max } from 'drizzle-orm';
 import { paletteKeys } from '../palette.js';
 import type { Db } from './db.js';
-import { categories, formats, goals, practices } from './schema.js';
+import { categories, formats, goals, planTemplates, practices } from './schema.js';
+import { getPlanLimit, setPlanLimit } from './plan.js';
 
 export class InputError extends Error {}
 
@@ -28,6 +29,12 @@ function id(f: FormData, k = 'id'): number | undefined {
 	return v;
 }
 
+/** Weekday checkboxes (0 Sun … 6 Sat) → '1,5,6', or null for none. */
+function days(f: FormData): string | null {
+	const ds = [...new Set(f.getAll('defaultDays').map(Number))].filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
+	return ds.length ? ds.sort().join(',') : null;
+}
+
 const need = (v: number | undefined, what: string) => {
 	if (v === undefined) throw new InputError(`Выберите ${what}`);
 	return v;
@@ -38,6 +45,8 @@ export function loadSettings(db: Db) {
 		categories: db.select().from(categories).orderBy(asc(categories.id)).all(),
 		goals: db.select().from(goals).orderBy(asc(goals.id)).all(),
 		formats: db.select().from(formats).orderBy(asc(formats.sortOrder), asc(formats.id)).all(),
+		templates: db.select().from(planTemplates).orderBy(asc(planTemplates.name)).all(),
+		planLimit: getPlanLimit(db),
 		practices: db.select().from(practices).orderBy(asc(practices.sortOrder), asc(practices.id)).all()
 	};
 }
@@ -67,6 +76,7 @@ export function savePractice(db: Db, f: FormData) {
 		title: str(f, 'title'),
 		goalId: need(id(f, 'goalId'), 'цель'),
 		formatId: id(f, 'formatId') ?? null,
+		defaultDays: days(f),
 		unit: str(f, 'unit'),
 		minDose: num(f, 'minDose'),
 		normDose: num(f, 'normDose')
@@ -90,7 +100,17 @@ export function saveFormat(db: Db, f: FormData) {
 	}
 }
 
-const tables = { category: categories, goal: goals, practice: practices, format: formats } as const;
+export function saveTemplate(db: Db, f: FormData) {
+	const tid = need(id(f), 'шаблон');
+	db.update(planTemplates).set({ name: str(f, 'name') }).where(eq(planTemplates.id, tid)).run();
+}
+
+export function savePlanLimit(db: Db, f: FormData) {
+	const raw = String(f.get('limit') ?? '').trim();
+	setPlanLimit(db, raw ? Number(raw) : null);
+}
+
+const tables = { category: categories, goal: goals, practice: practices, format: formats, template: planTemplates } as const;
 
 /** Archive hides an item everywhere but keeps its history; restore brings it back. */
 export function setArchived(db: Db, f: FormData, archived: boolean) {

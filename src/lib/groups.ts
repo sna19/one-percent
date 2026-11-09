@@ -61,3 +61,36 @@ export function dayScore(practices: PracticeView[], date: DateStr, amountOf: Amo
 	const done = new Set(practices.filter((p) => counts(amountOf(p.id, date), p)).map((p) => p.goalId));
 	return { done: done.size, total: all.size };
 }
+
+// ── Spec 003: the plan lens ────────────────────────────────────────────────
+
+export type IsPlanned = (practiceId: number, date: DateStr) => boolean;
+
+/** Practices shown in the plan lens: planned this week, or done this week without a plan (bonus). */
+export function planPractices(practices: PracticeView[], days: DateStr[], isPlanned: IsPlanned, amountOf: AmountOf) {
+	return practices.filter((p) => days.some((d) => isPlanned(p.id, d) || counts(amountOf(p.id, d), p)));
+}
+
+/** Day score in the plan lens: goals planned that day, and how many of them had a planned practice done. */
+export function planDayScore(practices: PracticeView[], date: DateStr, isPlanned: IsPlanned, amountOf: AmountOf) {
+	const planned = practices.filter((p) => isPlanned(p.id, date));
+	const goals = new Set(planned.map((p) => p.goalId));
+	const done = new Set(planned.filter((p) => counts(amountOf(p.id, date), p)).map((p) => p.goalId));
+	return { done: done.size, total: goals.size };
+}
+
+/** «по плану X из Y, бонусов Z» — practice-days. */
+export function planWeekSummary(practices: PracticeView[], days: DateStr[], isPlanned: IsPlanned, amountOf: AmountOf) {
+	let planned = 0;
+	let done = 0;
+	let bonus = 0;
+	for (const p of practices)
+		for (const d of days) {
+			const did = counts(amountOf(p.id, d), p);
+			if (isPlanned(p.id, d)) {
+				planned++;
+				if (did) done++;
+			} else if (did) bonus++;
+		}
+	return { planned, done, bonus };
+}

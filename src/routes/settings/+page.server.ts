@@ -6,6 +6,8 @@ import {
 	moveItem,
 	saveCategory,
 	saveFormat,
+	savePlanLimit,
+	saveTemplate,
 	saveGoal,
 	savePractice,
 	setArchived
@@ -31,5 +33,7 @@ export const actions = {
 	archive: run((f) => setArchived(getDb(), f, true)),
 	restore: run((f) => setArchived(getDb(), f, false)),
 	format: run((f) => saveFormat(getDb(), f)),
+	template: run((f) => saveTemplate(getDb(), f)),
+	limit: run((f) => savePlanLimit(getDb(), f)),
 	move: run((f) => moveItem(getDb(), f))
 };

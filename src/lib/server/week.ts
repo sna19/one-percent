@@ -2,6 +2,7 @@ import { and, asc, between, eq, gte, isNull, lte, max, sql } from 'drizzle-orm';
 import { addDays, type DateStr } from '../dates.js';
 import type { WeekData } from '../types.js';
 import type { Db } from './db.js';
+import { ensureCurrentPlan, parseDays } from './plan.js';
 import { categories, entries, formats, goals, practices } from './schema.js';
 
 export function loadWeek(db: Db, start: DateStr, today: DateStr): WeekData {
@@ -18,6 +19,7 @@ export function loadWeek(db: Db, start: DateStr, today: DateStr): WeekData {
 			formatId: formats.id,
 			formatName: formats.name,
 			formatOrder: formats.sortOrder,
+			defaultDays: practices.defaultDays,
 			createdOn: sql<string>`substr(${practices.createdAt}, 1, 10)`
 		})
 		.from(practices)
@@ -57,7 +59,8 @@ export function loadWeek(db: Db, start: DateStr, today: DateStr): WeekData {
 
 	return {
 		start,
-		practices: rows.map((r) => ({ ...r, lastDone: last.get(r.id) ?? null })),
-		entries: map
+		practices: rows.map((r) => ({ ...r, defaultDays: parseDays(r.defaultDays), lastDone: last.get(r.id) ?? null })),
+		entries: map,
+		plan: ensureCurrentPlan(db, start, today)
 	};
 }

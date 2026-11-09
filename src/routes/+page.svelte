@@ -2,8 +2,17 @@
 	import { onMount } from 'svelte';
 	import { addDays, todayStr, weekDays, weekStart } from '#lib/dates.js';
 	import { colorOf } from '#lib/palette.js';
-	import { daysWithout, depth, priority } from '#lib/rules.js';
-	import { dayScore, groupCell, groupDaysWithout, groupPractices, type Group, type Lens } from '#lib/groups.js';
+	import { counts, daysWithout, depth, priority } from '#lib/rules.js';
+	import {
+		dayScore,
+		groupCell,
+		groupDaysWithout,
+		groupPractices,
+		planDayScore,
+		planPractices,
+		planWeekSummary,
+		type Lens
+	} from '#lib/groups.js';
 	import { cacheWeek, cachedWeek, enqueue, flush, pending } from '#lib/store.js';
 	import type { PracticeView, WeekData } from '#lib/types.js';
 
@@ -40,11 +49,13 @@
 			/* private mode: keep in memory only */
 		}
 	};
-	let lens = $state<Lens>(read('lens', 'goal'));
+	/** Spec 003: «План» is a third view, first and default; «По целям» / «По формату» stay full overviews. */
+	type View = 'plan' | Lens;
+	let lens = $state<View>(read('view', 'plan'));
 	let open = $state<string[]>(read('open-groups', []));
-	function setLens(l: Lens) {
+	function setLens(l: View) {
 		lens = l;
-		write('lens', l);
+		write('view', l);
 	}
 	function toggle(key: string) {
 		open = open.includes(key) ? open.filter((k) => k !== key) : [...open, key];
@@ -52,19 +63,56 @@
 	}
 
 	const practices = $derived(week?.practices ?? []);
-	const groups = $derived(groupPractices(practices, lens));
+	const plannedSet = $derived(
+		new Set(Object.entries(week?.plan?.items ?? {}).flatMap(([pid, ds]) => ds.map((d) => `${pid}|${d}`)))
+	);
+	const isPlanned = (pid: number, d: string) => plannedSet.has(`${pid}|${d}`);
+	const isPlan = $derived(lens === 'plan');
+	const groups = $derived(
+		isPlan
+			? groupPractices(planPractices(practices, days, isPlanned, amountOf), 'goal')
+			: groupPractices(practices, lens as Lens)
+	);
+	const summary = $derived(planWeekSummary(practices, days, isPlanned, amountOf));
 	const nOf = (p: PracticeView) => daysWithout(p.lastDone, p.createdOn, today);
-	// Priority is chosen among goals, whatever the lens.
+	// Priority is chosen among goals; in the plan view only among goals planned for today.
 	const top = $derived(
 		priority(
-			groupPractices(practices, 'goal').map((g, i) => ({
-				id: i,
-				title: g.title,
-				n: groupDaysWithout(g, today),
-				doneToday: g.practices.some((p) => p.lastDone === today)
-			}))
+			groupPractices(practices, 'goal')
+				.filter((g) => !isPlan || g.practices.some((p) => isPlanned(p.id, today)))
+				.map((g, i) => ({
+					id: i,
+					title: g.title,
+					n: groupDaysWithout(g, today),
+					doneToday: g.practices.some((p) => p.lastDone === today)
+				}))
 		)
 	);
+	const SOURCE_LABEL: Record<string, string> = {
+		previous: 'по прошлой неделе',
+		default: 'по обычным дням практик',
+		empty: 'с нуля'
+	};
+	const sourceLabel = (src: string) =>
+		SOURCE_LABEL[src] ??
+		(src.startsWith('template:') ? 'по шаблону' : src.startsWith('week:') ? `по неделе с ${label(src.slice(5))}` : '');
+
+	let confirming = $state(false);
+	async function confirmDraft() {
+		confirming = true;
+		try {
+			const r = await fetch('/api/plan', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ action: 'confirm', start, today })
+			});
+			if (r.ok) await load();
+		} catch {
+			problem = 'Нет связи с сервером';
+		} finally {
+			confirming = false;
+		}
+	}
 
 	function without(n: number) {
 		const w = n % 10 === 1 && n % 100 !== 11 ? 'день' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'дня' : 'дней';
@@ -224,10 +272,25 @@
 			{/if}
 		</div>
 	{:else}
-		<div class="lens" role="radiogroup" aria-label="Группировка">
+		<div class="lens" role="radiogroup" aria-label="Вид">
+			<button role="radio" aria-checked={lens === 'plan'} class:on={lens === 'plan'} onclick={() => setLens('plan')}>План</button>
 			<button role="radio" aria-checked={lens === 'goal'} class:on={lens === 'goal'} onclick={() => setLens('goal')}>По целям</button>
 			<button role="radio" aria-checked={lens === 'format'} class:on={lens === 'format'} onclick={() => setLens('format')}>По формату</button>
 		</div>
+		{#if isPlan && week.plan?.status === 'draft'}
+			<div class="draft">
+				<p>Черновик {sourceLabel(week.plan.source)}</p>
+				<div>
+					<button onclick={confirmDraft} disabled={confirming}>Утвердить</button>
+					<a href="/plan?start={start}">Спланировать иначе</a>
+				</div>
+			</div>
+		{:else if isPlan && !week.plan}
+			<div class="draft">
+				<p>На эту неделю плана нет</p>
+				{#if start >= weekStart(today)}<div><a href="/plan?start={start}">Спланировать</a></div>{/if}
+			</div>
+		{/if}
 		<div class="grid" style="--cols:{days.length}">
 			<div></div>
 			{#each days as d (d)}
@@ -253,8 +316,12 @@
 					</button>
 					{#each days as d (d)}
 						{@const c = groupCell(g, d, amountOf)}
+						{@const planned = g.practices.some((p) => isPlanned(p.id, d))}
 						<button
 							class="cell"
+							class:planned
+							class:blank={isPlan && !planned}
+							class:bonus={isPlan && !planned && c.done > 0}
 							class:future={d > today}
 							class:is-today={d === today}
 							data-depth={c.depth}
@@ -274,12 +341,19 @@
 
 			<div class="name total">День</div>
 			{#each days as d (d)}
-				{@const sc = dayScore(practices, d, amountOf)}
+				{@const sc = isPlan ? planDayScore(practices, d, isPlanned, amountOf) : dayScore(practices, d, amountOf)}
 				<div class="total" class:future={d > today} aria-label="целей: {sc.done} из {sc.total}">
-					{#if d <= today}{sc.done}/{sc.total}{/if}
+					{#if d <= today && sc.total}{sc.done}/{sc.total}{:else if d <= today}–{/if}
 				</div>
 			{/each}
 		</div>
+
+		{#if isPlan}
+			<p class="week-sum">
+				По плану {summary.done} из {summary.planned}{summary.bonus ? `, бонусов ${summary.bonus}` : ''}
+				{#if week.plan && start >= weekStart(today)}· <a href="/plan?start={start}">Изменить план</a>{/if}
+			</p>
+		{/if}
 
 		{#if top && isCurrentWeek}
 			<p class="priority">Сегодня в приоритете: <b>{top.title}</b></p>
@@ -324,8 +398,12 @@
 	</div>
 	{#each days as d (d)}
 		{@const a = amountOf(p.id, d)}
+		{@const planned = isPlanned(p.id, d)}
 		<button
 			class="cell"
+			class:planned
+			class:blank={isPlan && !planned}
+			class:bonus={isPlan && !planned && counts(a, p)}
 			class:future={d > today}
 			class:is-today={d === today}
 			data-depth={depth(a, p)}
@@ -489,7 +567,7 @@
 	}
 	.lens {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
+		grid-template-columns: repeat(3, 1fr);
 		gap: 2px;
 		padding: 2px;
 		margin: 0 0 12px;
@@ -576,6 +654,73 @@
 		font-variant-numeric: tabular-nums;
 	}
 	.cell[data-depth='0.5'] .badge {
+		color: var(--text);
+	}
+	/* Spec 003: outline = plan, fill = fact; no plan in the plan view = empty space. */
+	.cell.planned {
+		border: 2px solid var(--c);
+	}
+	.cell.blank[data-depth='0'] {
+		border-color: transparent;
+		background: transparent;
+	}
+	.cell.blank.future {
+		background: transparent;
+	}
+	.cell.bonus::after {
+		content: '+';
+		position: absolute;
+		top: 1px;
+		left: 4px;
+		font-size: 11px;
+		font-weight: 700;
+		line-height: 1;
+		color: var(--surface);
+	}
+	.cell.bonus[data-depth='0.5']::after {
+		color: var(--text);
+	}
+	.draft {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		flex-wrap: wrap;
+		margin: 0 0 12px;
+		padding: 10px 12px;
+		border-radius: 12px;
+		background: var(--surface);
+		font-size: 14px;
+	}
+	.draft p {
+		margin: 0;
+	}
+	.draft div {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+	}
+	.draft button,
+	.draft a {
+		min-height: 36px;
+		display: inline-flex;
+		align-items: center;
+		padding: 0 12px;
+		border-radius: 8px;
+		border: 1px solid var(--line);
+		background: var(--bg);
+		color: var(--text);
+		text-decoration: none;
+		font-size: 14px;
+		cursor: pointer;
+	}
+	.week-sum {
+		margin: 12px 0 0;
+		font-size: 13px;
+		color: var(--muted);
+		text-align: center;
+	}
+	.week-sum a {
 		color: var(--text);
 	}
 	.settings {

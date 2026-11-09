@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { openDb } from './db.js';
 import { seedIfEmpty } from './seed.js';
-import { InputError, loadSettings, moveItem, saveFormat, savePractice, setArchived } from './settings.js';
+import { InputError, loadSettings, moveItem, saveFormat, savePlanLimit, savePractice, setArchived } from './settings.js';
 import { loadWeek } from './week.js';
 
 const form = (o: Record<string, string | number>) => {
@@ -77,5 +77,22 @@ describe('formats', () => {
 		setArchived(db, form({ kind: 'practice', id: 2 }), true);
 		moveItem(db, form({ id: 3, dir: -1 }));
 		expect(loadSettings(db).practices.filter((p) => !p.archivedAt).map((p) => p.id)).toEqual([3, 1, 4]);
+	});
+});
+
+describe('planning settings', () => {
+	it('usual days and plan limit', () => {
+		const db = setup();
+		const f = form({ id: 4, title: 'Спорт', goalId: 4, unit: 'трен', minDose: 1, normDose: 1 });
+		f.append('defaultDays', '6');
+		f.append('defaultDays', '1');
+		f.append('defaultDays', '5');
+		savePractice(db, f);
+		expect(loadSettings(db).practices.find((p) => p.id === 4)!.defaultDays).toBe('1,5,6');
+		savePlanLimit(db, form({ limit: '8' }));
+		expect(loadSettings(db).planLimit).toBe(8);
+		savePlanLimit(db, form({ limit: '' }));
+		expect(loadSettings(db).planLimit).toBeNull();
+		expect(() => savePlanLimit(db, form({ limit: '-1' }))).toThrow(InputError);
 	});
 });
