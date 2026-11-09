@@ -70,16 +70,37 @@
 		picker = undefined;
 		call({ action: 'source', source: src });
 	};
+	// Taps show at once and go to the server one by one. Taps not yet confirmed by the server
+	// are re-applied on top of each answer, so a quick series of taps never flickers back.
+	const unconfirmed = new Map<string, boolean>();
+	let chain: Promise<unknown> = Promise.resolve();
+
+	function show(pid: number, d: string, on: boolean) {
+		if (!data) return;
+		data.plan ??= { weekStart: start, status: 'draft', source: 'empty', items: {} };
+		const ds = data.plan.items[pid] ?? [];
+		const next = on ? (ds.includes(d) ? ds : [...ds, d]) : ds.filter((x) => x !== d);
+		data.plan.items = { ...data.plan.items, [pid]: next };
+	}
+
+	function reapplyUnconfirmed() {
+		for (const [key, on] of unconfirmed) {
+			const [pid, d] = key.split('|');
+			show(Number(pid), d, on);
+		}
+	}
+
 	const toggle = (p: PracticeView, d: string) => {
 		if (d < today) return;
-		// instant feedback, the server answer replaces it
-		if (data?.plan) {
-			const ds = (data.plan.items[p.id] ??= []);
-			const i = ds.indexOf(d);
-			if (i >= 0) ds.splice(i, 1);
-			else ds.push(d);
-		}
-		call({ action: 'item', practiceId: p.id, date: d, planned: !isPlanned(p.id, d) });
+		const on = !isPlanned(p.id, d); // decide before changing anything on screen
+		const key = `${p.id}|${d}`;
+		unconfirmed.set(key, on);
+		show(p.id, d, on);
+		chain = chain.then(async () => {
+			await call({ action: 'item', practiceId: p.id, date: d, planned: on });
+			if (unconfirmed.get(key) === on) unconfirmed.delete(key);
+			reapplyUnconfirmed();
+		});
 	};
 	const row = (p: PracticeView, mode: 'daily' | 'default' | 'clear') => call({ action: 'row', practiceId: p.id, mode });
 
