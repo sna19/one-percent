@@ -14,6 +14,9 @@
 		type Lens
 	} from '#lib/groups.js';
 	import { cacheWeek, cachedWeek, enqueue, flush, pending } from '#lib/store.js';
+	import { dayTitle, doseHint, todayLists } from '#lib/today.js';
+	import { crossfade } from 'svelte/transition';
+	import { flip } from 'svelte/animate';
 	import type { PracticeView, WeekData } from '#lib/types.js';
 
 	const DAY_NAMES = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
@@ -49,13 +52,24 @@
 			/* private mode: keep in memory only */
 		}
 	};
-	/** Spec 003: «План» is a third view, first and default; «По целям» / «По формату» stay full overviews. */
+	/**
+	 * Spec 004: three tabs. «Сегодня» always opens first (not remembered, so a morning starts on the
+	 * working screen); «Неделя» is the plan view of Spec 003; «Всё» holds the goal / format lens.
+	 */
+	type Tab = 'today' | 'week' | 'all';
 	type View = 'plan' | Lens;
-	let lens = $state<View>(read('view', 'plan'));
+	let tab = $state<Tab>('today');
+	let allLens = $state<Lens>(read('all-lens', 'goal'));
+	const lens = $derived<View>(tab === 'week' ? 'plan' : allLens);
 	let open = $state<string[]>(read('open-groups', []));
-	function setLens(l: View) {
-		lens = l;
-		write('view', l);
+	function setTab(t: Tab) {
+		tab = t;
+		// the day screen is always about today
+		if (t === 'today' && start !== weekStart(today)) toToday();
+	}
+	function setLens(l: Lens) {
+		allLens = l;
+		write('all-lens', l);
 	}
 	function toggle(key: string) {
 		open = open.includes(key) ? open.filter((k) => k !== key) : [...open, key];
@@ -74,6 +88,16 @@
 			: groupPractices(practices, lens as Lens)
 	);
 	const summary = $derived(planWeekSummary(practices, days, isPlanned, amountOf));
+	const day = $derived(todayLists(practices, today, isPlanned, amountOf));
+	let moreOpen = $state(false);
+	const [send, receive] = crossfade({ duration: 220 });
+
+	// Card: tap = norm, tap again = clear; long press = the same choice as on a cell.
+	function cardUp(p: PracticeView) {
+		clearTimeout(timer);
+		if (longPressed) return;
+		mark(p, today, counts(amountOf(p.id, today), p) ? 0 : p.normDose);
+	}
 	const nOf = (p: PracticeView) => daysWithout(p.lastDone, p.createdOn, today);
 	// Priority is chosen among goals; in the plan view only among goals planned for today.
 	const top = $derived(
@@ -247,6 +271,12 @@
 </script>
 
 <main>
+	{#if tab === 'today'}
+	<header class="today-head">
+		<h1>{dayTitle(today)}</h1>
+		{#if week && day.planned}<span>по плану {day.plannedDone} из {day.planned}</span>{/if}
+	</header>
+	{:else}
 	<header>
 		<button class="nav" onclick={() => go(-1)} aria-label="Прошлая неделя">‹</button>
 		<div class="range">
@@ -257,6 +287,7 @@
 		</div>
 		<button class="nav" onclick={() => go(1)} aria-label="Следующая неделя">›</button>
 	</header>
+	{/if}
 
 	{#if offline && week}
 		<p class="status">{problem ?? 'Нет связи'}{queued ? ` · не отправлено: ${queued}` : ''}</p>
@@ -272,12 +303,18 @@
 			{/if}
 		</div>
 	{:else}
-		<div class="lens" role="radiogroup" aria-label="Вид">
-			<button role="radio" aria-checked={lens === 'plan'} class:on={lens === 'plan'} onclick={() => setLens('plan')}>План</button>
-			<button role="radio" aria-checked={lens === 'goal'} class:on={lens === 'goal'} onclick={() => setLens('goal')}>По целям</button>
-			<button role="radio" aria-checked={lens === 'format'} class:on={lens === 'format'} onclick={() => setLens('format')}>По формату</button>
+		<div class="lens" role="tablist" aria-label="Вкладки">
+			<button role="tab" aria-selected={tab === 'today'} class:on={tab === 'today'} onclick={() => setTab('today')}>Сегодня</button>
+			<button role="tab" aria-selected={tab === 'week'} class:on={tab === 'week'} onclick={() => setTab('week')}>Неделя</button>
+			<button role="tab" aria-selected={tab === 'all'} class:on={tab === 'all'} onclick={() => setTab('all')}>Всё</button>
 		</div>
-		{#if isPlan && week.plan?.status === 'draft'}
+		{#if tab === 'all'}
+			<div class="sublens" role="radiogroup" aria-label="Группировка">
+				<button role="radio" aria-checked={allLens === 'goal'} class:on={allLens === 'goal'} onclick={() => setLens('goal')}>По целям</button>
+				<button role="radio" aria-checked={allLens === 'format'} class:on={allLens === 'format'} onclick={() => setLens('format')}>По формату</button>
+			</div>
+		{/if}
+		{#if (isPlan || tab === 'today') && week.plan?.status === 'draft'}
 			<div class="draft">
 				<p>Черновик {sourceLabel(week.plan.source)}</p>
 				<div>
@@ -285,12 +322,15 @@
 					<a href="/plan?start={start}">Спланировать иначе</a>
 				</div>
 			</div>
-		{:else if isPlan && !week.plan}
+		{:else if (isPlan || tab === 'today') && !week.plan}
 			<div class="draft">
 				<p>На эту неделю плана нет</p>
 				{#if start >= weekStart(today)}<div><a href="/plan?start={start}">Спланировать</a></div>{/if}
 			</div>
 		{/if}
+		{#if tab === 'today'}
+			{@render todayScreen()}
+		{:else}
 		<div class="grid" style="--cols:{days.length}">
 			<div></div>
 			{#each days as d (d)}
@@ -358,6 +398,7 @@
 		{#if top && isCurrentWeek}
 			<p class="priority">Сегодня в приоритете: <b>{top.title}</b></p>
 		{/if}
+		{/if}
 	{/if}
 	<a class="settings" href="/settings" data-sveltekit-reload>Настройки</a>
 </main>
@@ -389,6 +430,76 @@
 		</div>
 	</div>
 {/if}
+
+{#snippet todayScreen()}
+	{#if day.planned}
+		<p class="priority today-top">
+			{#if day.top}В приоритете: <b>{day.top}</b>{:else}План на сегодня выполнен{/if}
+		</p>
+	{:else}
+		<p class="empty-day">На сегодня ничего не запланировано</p>
+	{/if}
+
+	{#if day.todo.length}
+		<h2 class="zone">К выполнению</h2>
+		<ul class="cards">
+			{#each day.todo as p (p.id)}
+				<li in:receive={{ key: p.id }} out:send={{ key: p.id }} animate:flip={{ duration: 220 }}>
+					{@render card(p, false)}
+				</li>
+			{/each}
+		</ul>
+	{/if}
+
+	{#if day.done.length}
+		<h2 class="zone">Сделано</h2>
+		<ul class="cards">
+			{#each day.done as d (d.p.id)}
+				<li in:receive={{ key: d.p.id }} out:send={{ key: d.p.id }} animate:flip={{ duration: 220 }}>
+					{@render card(d.p, d.bonus)}
+				</li>
+			{/each}
+		</ul>
+	{/if}
+
+	{#if day.other.length}
+		<details class="more" open={moreOpen || !day.planned} ontoggle={(e) => (moreOpen = (e.currentTarget as HTMLDetailsElement).open)}>
+			<summary>Сделать что-то ещё <span class="count">{day.other.length}</span></summary>
+			<ul class="cards">
+				{#each day.other as p (p.id)}
+					<li in:receive={{ key: p.id }} out:send={{ key: p.id }} animate:flip={{ duration: 220 }}>
+						{@render card(p, false)}
+					</li>
+				{/each}
+			</ul>
+		</details>
+	{/if}
+
+	{#if week?.plan}<p class="week-sum"><a href="/plan?start={start}">Изменить план</a></p>{/if}
+{/snippet}
+
+{#snippet card(p: PracticeView, bonus: boolean)}
+	{@const a = amountOf(p.id, today)}
+	{@const dep = depth(a, p)}
+	<button
+		class="card"
+		data-depth={dep}
+		style={cellStyle(p.color)}
+		aria-label="{p.title}: {a ? `${a} ${p.unit}` : 'не отмечено'}{bonus ? ', бонус' : ''}"
+		onpointerdown={() => down(p, today)}
+		onpointerup={() => cardUp(p)}
+		onpointerleave={cancel}
+		onpointercancel={cancel}
+		oncontextmenu={(e) => e.preventDefault()}
+	>
+		<span class="box" aria-hidden="true">{#if counts(a, p)}<svg viewBox="0 0 12 12"><path d="M2.5 6.2 5 8.6 9.6 3.4" /></svg>{/if}</span>
+		<span class="ctext">
+			<span class="ctitle">{p.title}{#if bonus}<span class="tag">бонус</span>{/if}</span>
+			{#if p.goalTitle !== p.title}<small>{p.goalTitle}</small>{/if}
+		</span>
+		<span class="dose">{a && !counts(a, p) ? `${a} из ${p.normDose} ${p.unit}` : a ? `${a} ${p.unit}` : doseHint(p)}</span>
+	</button>
+{/snippet}
 
 {#snippet practiceRow(p: PracticeView, title: string, sub: string, indent: boolean)}
 	{@const n = nOf(p)}
@@ -722,6 +833,172 @@
 	}
 	.week-sum a {
 		color: var(--text);
+	}
+	.today-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 12px;
+		min-height: 44px;
+		margin-bottom: 8px;
+	}
+	.today-head h1 {
+		font-size: 22px;
+		margin: 0;
+	}
+	.today-head span {
+		color: var(--muted);
+		font-size: 14px;
+	}
+	.sublens {
+		display: flex;
+		gap: 6px;
+		margin: -4px 0 12px;
+	}
+	.sublens button {
+		min-height: 32px;
+		padding: 0 12px;
+		border-radius: 16px;
+		border: 1px solid var(--line);
+		background: none;
+		color: var(--muted);
+		font-size: 13px;
+		cursor: pointer;
+	}
+	.sublens button.on {
+		background: var(--text);
+		border-color: var(--text);
+		color: var(--bg);
+	}
+	.today-top {
+		margin-top: 0;
+	}
+	.empty-day {
+		text-align: center;
+		color: var(--muted);
+		margin: 24px 0 8px;
+	}
+	.zone {
+		font-size: 13px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--muted);
+		margin: 20px 0 8px;
+	}
+	.cards {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.card {
+		--c: var(--c-light);
+		--fg: var(--text);
+		width: 100%;
+		min-height: 60px;
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 10px 14px;
+		border-radius: 14px;
+		border: 2px solid var(--c);
+		background: var(--surface);
+		color: var(--fg);
+		text-align: left;
+		cursor: pointer;
+		touch-action: manipulation;
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
+		transition: background-color 0.15s;
+	}
+	@media (prefers-color-scheme: dark) {
+		.card {
+			--c: var(--c-dark);
+		}
+	}
+	/* done: fill by depth (v0.1 rules); white text on the full shades */
+	.card[data-depth='0.5'] {
+		background: color-mix(in oklab, var(--c) var(--half), var(--surface));
+	}
+	/* full shades use the deeper palette tone in both themes, so white text stays readable */
+	.card[data-depth='1'] {
+		background: color-mix(in oklab, var(--c-light) 78%, black);
+		border-color: transparent;
+		--fg: #fff;
+	}
+	.card[data-depth='1.5'] {
+		background: color-mix(in oklab, var(--c-light) 58%, black);
+		border-color: transparent;
+		--fg: #fff;
+	}
+	.box {
+		flex: none;
+		width: 26px;
+		height: 26px;
+		border-radius: 7px;
+		border: 2px solid var(--c);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.card[data-depth='1'] .box,
+	.card[data-depth='1.5'] .box {
+		border-color: #fff;
+	}
+	.box svg {
+		width: 16px;
+		height: 16px;
+		fill: none;
+		stroke: var(--fg);
+		stroke-width: 2;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	.ctext {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+	}
+	.ctitle {
+		font-size: 16px;
+		font-weight: 600;
+	}
+	.ctext small {
+		font-size: 13px;
+		opacity: 0.75;
+	}
+	.tag {
+		margin-left: 8px;
+		padding: 1px 6px;
+		border-radius: 6px;
+		font-size: 11px;
+		font-weight: 600;
+		border: 1px solid currentColor;
+		vertical-align: 2px;
+	}
+	.dose {
+		flex: none;
+		max-width: 40%;
+		text-align: right;
+		font-size: 12px;
+		opacity: 0.8;
+	}
+	.more {
+		margin-top: 20px;
+	}
+	.more summary {
+		font-size: 15px;
+		color: var(--muted);
+		min-height: 44px;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		cursor: pointer;
 	}
 	.settings {
 		display: block;
