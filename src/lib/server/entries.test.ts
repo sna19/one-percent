@@ -55,14 +55,17 @@ describe('migrations', async () => {
 	const path = await import('node:path');
 	const { default: Database } = await import('better-sqlite3');
 
-	it('seeds formats and backs up an existing database before a pending migration', () => {
+	it('upgrades a v0.1 database: backup first, entries kept, formats seeded', () => {
 		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'op-'));
 		const file = path.join(dir, 'one-percent.db');
-		// simulate a v0.1 database: only the first migration applied, with an entry
-		const { sqlite } = openDb(file);
-		sqlite.exec("delete from __drizzle_migrations where created_at = (select max(created_at) from __drizzle_migrations)");
-		sqlite.exec('alter table practices drop column format_id');
-		sqlite.exec('drop table formats');
+		// a v0.1 database = only the first migration
+		const v01 = path.join(dir, 'migrations-v01');
+		fs.cpSync('drizzle', v01, { recursive: true });
+		const journal = path.join(v01, 'meta', '_journal.json');
+		const j = JSON.parse(fs.readFileSync(journal, 'utf8'));
+		j.entries = j.entries.slice(0, 1);
+		fs.writeFileSync(journal, JSON.stringify(j));
+		const { sqlite } = openDb(file, v01);
 		sqlite.exec("insert into categories (name, color) values ('C', 'blue')");
 		sqlite.exec("insert into goals (title, category_id) values ('G', 1)");
 		sqlite.exec("insert into practices (goal_id, title, unit, min_dose, norm_dose) values (1, 'P', 'мин', 1, 2)");

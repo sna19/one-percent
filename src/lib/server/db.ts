@@ -14,18 +14,18 @@ const migrationsDir = resolve(process.env.MIGRATIONS_DIR ?? 'drizzle');
 export type Db = BetterSQLite3Database<typeof schema>;
 
 /** Opens a database file (or ':memory:') and applies pending migrations. */
-export function openDb(path: string): { sqlite: Database.Database; db: Db } {
+export function openDb(path: string, migrationsFolder = migrationsDir): { sqlite: Database.Database; db: Db } {
 	const sqlite = new Database(path);
 	sqlite.pragma('journal_mode = WAL');
 	sqlite.pragma('foreign_keys = ON');
 	sqlite.pragma('busy_timeout = 5000');
 	const db = drizzle(sqlite, { schema });
-	const journal = join(migrationsDir, 'meta', '_journal.json');
+	const journal = join(migrationsFolder, 'meta', '_journal.json');
 	if (!existsSync(journal)) {
-		throw new Error(`migrations not found in ${migrationsDir} (cwd ${process.cwd()}); set MIGRATIONS_DIR`);
+		throw new Error(`migrations not found in ${migrationsFolder} (cwd ${process.cwd()}); set MIGRATIONS_DIR`);
 	}
 	if (path !== ':memory:') backupBeforeMigrations(sqlite, journal, path);
-	migrate(db, { migrationsFolder: migrationsDir });
+	migrate(db, { migrationsFolder });
 	return { sqlite, db };
 }
 

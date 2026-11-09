@@ -50,6 +50,8 @@ export const practices = sqliteTable('practices', {
 	minDose: real('min_dose').notNull(),
 	normDose: real('norm_dose').notNull(),
 	sortOrder: integer('sort_order').notNull().default(0),
+	/** Spec 003: usual weekdays for planning, comma-separated 0 (Sun) … 6 (Sat); null = none. */
+	defaultDays: text('default_days'),
 	archivedAt: text('archived_at'),
 	createdAt: createdAt()
 });
@@ -68,3 +70,59 @@ export const entries = sqliteTable(
 	},
 	(t) => [uniqueIndex('entries_practice_date').on(t.practiceId, t.date)]
 );
+
+/** Spec 003: one plan per week. A draft works as a plan until it is confirmed. */
+export const weekPlans = sqliteTable('week_plans', {
+	id: integer('id').primaryKey({ autoIncrement: true }),
+	/** Sunday of the week, YYYY-MM-DD. */
+	weekStart: text('week_start').notNull().unique(),
+	status: text('status', { enum: ['draft', 'confirmed'] }).notNull().default('draft'),
+	/** previous | empty | default | week:<YYYY-MM-DD> | template:<id> */
+	source: text('source').notNull(),
+	confirmedAt: text('confirmed_at'),
+	createdAt: createdAt()
+});
+
+export const planItems = sqliteTable(
+	'plan_items',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		weekPlanId: integer('week_plan_id')
+			.notNull()
+			.references(() => weekPlans.id),
+		practiceId: integer('practice_id')
+			.notNull()
+			.references(() => practices.id),
+		date: text('date').notNull()
+	},
+	(t) => [uniqueIndex('plan_items_practice_date').on(t.practiceId, t.date)]
+);
+
+export const planTemplates = sqliteTable('plan_templates', {
+	id: integer('id').primaryKey({ autoIncrement: true }),
+	name: text('name').notNull(),
+	archivedAt: text('archived_at'),
+	createdAt: createdAt()
+});
+
+export const planTemplateItems = sqliteTable(
+	'plan_template_items',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		templateId: integer('template_id')
+			.notNull()
+			.references(() => planTemplates.id),
+		practiceId: integer('practice_id')
+			.notNull()
+			.references(() => practices.id),
+		/** 0 (Sun) … 6 (Sat) */
+		weekday: integer('weekday').notNull()
+	},
+	(t) => [uniqueIndex('plan_template_items_unique').on(t.templateId, t.practiceId, t.weekday)]
+);
+
+/** Small key/value settings, e.g. the soft limit of practices in a plan. */
+export const appSettings = sqliteTable('app_settings', {
+	key: text('key').primaryKey(),
+	value: text('value').notNull()
+});
