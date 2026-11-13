@@ -52,6 +52,10 @@ export const practices = sqliteTable('practices', {
 	sortOrder: integer('sort_order').notNull().default(0),
 	/** Spec 003: usual weekdays for planning, comma-separated 0 (Sun) … 6 (Sat); null = none. */
 	defaultDays: text('default_days'),
+	/** Spec 005: the practice's standing note, Tiptap JSON; never rendered as HTML. */
+	note: text('note'),
+	/** Client time of the last note change: the later change wins. */
+	noteUpdatedAt: text('note_updated_at'),
 	archivedAt: text('archived_at'),
 	createdAt: createdAt()
 });

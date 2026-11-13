@@ -20,6 +20,8 @@ export function loadWeek(db: Db, start: DateStr, today: DateStr): WeekData {
 			formatName: formats.name,
 			formatOrder: formats.sortOrder,
 			defaultDays: practices.defaultDays,
+			note: practices.note,
+			noteUpdatedAt: practices.noteUpdatedAt,
 			createdOn: sql<string>`substr(${practices.createdAt}, 1, 10)`
 		})
 		.from(practices)
@@ -59,7 +61,12 @@ export function loadWeek(db: Db, start: DateStr, today: DateStr): WeekData {
 
 	return {
 		start,
-		practices: rows.map((r) => ({ ...r, defaultDays: parseDays(r.defaultDays), lastDone: last.get(r.id) ?? null })),
+		practices: rows.map((r) => ({
+			...r,
+			note: r.note ? JSON.parse(r.note) : null,
+			defaultDays: parseDays(r.defaultDays),
+			lastDone: last.get(r.id) ?? null
+		})),
 		entries: map,
 		plan: ensureCurrentPlan(db, start, today)
 	};

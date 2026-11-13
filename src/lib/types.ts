@@ -13,6 +13,9 @@ export interface PracticeView {
 	formatId: number | null;
 	formatName: string | null;
 	formatOrder: number | null;
+	/** Spec 005: standing note (Tiptap JSON) and when it last changed. */
+	note: import('./note.js').NoteDoc | null;
+	noteUpdatedAt: string | null;
 	/** Usual weekdays for planning, 0 (Sun) … 6 (Sat). */
 	defaultDays: number[];
 	createdOn: DateStr;
