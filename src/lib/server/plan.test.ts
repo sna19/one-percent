@@ -117,3 +117,71 @@ describe('week summary', () => {
 		expect(pastWeeks(db, W2)).toEqual([{ weekStart: W1, planned: 3, done: 1, bonus: 1 }]);
 	});
 });
+
+describe('day notes (Spec 006)', async () => {
+	const { setPlanNote } = await import('./plan.js');
+	const { entries } = await import('./schema.js');
+	const { checklistStats } = await import('../note.js');
+	const task = (t: string, checked: boolean) => ({
+		type: 'taskItem',
+		attrs: { checked },
+		content: [{ type: 'paragraph', content: [{ type: 'text', text: t }] }]
+	});
+	const meals = (...c: boolean[]) => ({
+		type: 'doc',
+		content: [{ type: 'taskList', content: c.map((x, i) => task(`еда ${i}`, x)) }]
+	});
+	const T = '2026-11-01T10:00:00.000Z';
+
+	function food() {
+		const db = setup();
+		// HBR (id 3, min 1, norm 3) marked by checklist; planned Sunday and Monday
+		db.update(practices).set({ checklistMarks: true }).where(eq(practices.id, 3)).run();
+		applySource(db, W1, W1, 'empty');
+		setPlanItem(db, W1, W1, 3, '2026-11-01', true);
+		setPlanItem(db, W1, W1, 3, '2026-11-02', true);
+		return db;
+	}
+	const amount = (db: ReturnType<typeof food>, d: string) =>
+		db.select().from(entries).all().find((e) => e.practiceId === 3 && e.date === d)?.amount;
+
+	it('checklist sets the day mark by the table', () => {
+		const db = food();
+		setPlanNote(db, 3, '2026-11-01', meals(true, true, false, false), T);
+		expect(amount(db, '2026-11-01')).toBe(1);
+		setPlanNote(db, 3, '2026-11-01', meals(true, true, true, true), '2026-11-01T11:00:00.000Z');
+		expect(amount(db, '2026-11-01')).toBe(3);
+		setPlanNote(db, 3, '2026-11-01', meals(true, false, false, false), '2026-11-01T12:00:00.000Z');
+		expect(amount(db, '2026-11-01')).toBe(0);
+	});
+
+	it('without the flag or without boxes the mark is left alone', () => {
+		const db = food();
+		setEntry(db, 3, '2026-11-02', 2);
+		setPlanNote(db, 3, '2026-11-02', { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'просто текст' }] }] }, T);
+		expect(amount(db, '2026-11-02')).toBe(2);
+		setPlanItem(db, W1, W1, 1, '2026-11-02', true);
+		setPlanNote(db, 1, '2026-11-02', meals(true), T);
+		expect(db.select().from(entries).all().some((e) => e.practiceId === 1)).toBe(false);
+	});
+
+	it('a day note needs a planned day; the later change wins; past days stay editable', () => {
+		const db = food();
+		expect(() => setPlanNote(db, 3, '2026-11-03', meals(true), T)).toThrow(InputError);
+		expect(setPlanNote(db, 3, '2026-11-01', meals(true), '2026-11-02T00:00:00.000Z')).toBe(true);
+		expect(setPlanNote(db, 3, '2026-11-01', meals(false), '2026-11-01T00:00:00.000Z')).toBe(false);
+	});
+
+	it('copying a week or a template clears boxes and leaves the source as history', () => {
+		const db = food();
+		setPlanNote(db, 3, '2026-11-02', meals(true, true, false), T);
+		confirmPlan(db, W1, 'Питание');
+		applySource(db, W2, W2, 'previous');
+		const copied = getPlan(db, W2)!.notes['3|2026-11-09'].note;
+		expect(checklistStats(copied)).toEqual({ total: 3, checked: 0 });
+		expect(checklistStats(getPlan(db, W1)!.notes['3|2026-11-02'].note)).toEqual({ total: 3, checked: 2 });
+		const [tpl] = listTemplates(db);
+		applySource(db, '2026-11-15', '2026-11-15', `template:${tpl.id}`);
+		expect(checklistStats(getPlan(db, '2026-11-15')!.notes['3|2026-11-16'].note)).toEqual({ total: 3, checked: 0 });
+	});
+});

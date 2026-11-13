@@ -56,6 +56,10 @@ export const practices = sqliteTable('practices', {
 	note: text('note'),
 	/** Client time of the last note change: the later change wins. */
 	noteUpdatedAt: text('note_updated_at'),
+	/** Spec 006: show the day note whole on the Today card (title «План дня»). */
+	showNoteFull: integer('show_note_full', { mode: 'boolean' }).notNull().default(false),
+	/** Spec 006: the day's depth comes from the day note's checklist. */
+	checklistMarks: integer('checklist_marks', { mode: 'boolean' }).notNull().default(false),
 	archivedAt: text('archived_at'),
 	createdAt: createdAt()
 });
@@ -97,7 +101,10 @@ export const planItems = sqliteTable(
 		practiceId: integer('practice_id')
 			.notNull()
 			.references(() => practices.id),
-		date: text('date').notNull()
+		date: text('date').notNull(),
+		/** Spec 006: the day note, Tiptap JSON like the practice note. */
+		note: text('note'),
+		noteUpdatedAt: text('note_updated_at')
 	},
 	(t) => [uniqueIndex('plan_items_practice_date').on(t.practiceId, t.date)]
 );
@@ -120,7 +127,9 @@ export const planTemplateItems = sqliteTable(
 			.notNull()
 			.references(() => practices.id),
 		/** 0 (Sun) … 6 (Sat) */
-		weekday: integer('weekday').notNull()
+		weekday: integer('weekday').notNull(),
+		/** Spec 006: day note kept without ticked boxes. */
+		note: text('note')
 	},
 	(t) => [uniqueIndex('plan_template_items_unique').on(t.templateId, t.practiceId, t.weekday)]
 );

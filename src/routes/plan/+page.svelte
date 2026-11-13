@@ -77,7 +77,7 @@
 
 	function show(pid: number, d: string, on: boolean) {
 		if (!data) return;
-		data.plan ??= { weekStart: start, status: 'draft', source: 'empty', items: {} };
+		data.plan ??= { weekStart: start, status: 'draft', source: 'empty', items: {}, notes: {} };
 		const ds = data.plan.items[pid] ?? [];
 		const next = on ? (ds.includes(d) ? ds : [...ds, d]) : ds.filter((x) => x !== d);
 		data.plan.items = { ...data.plan.items, [pid]: next };

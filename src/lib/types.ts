@@ -16,6 +16,9 @@ export interface PracticeView {
 	/** Spec 005: standing note (Tiptap JSON) and when it last changed. */
 	note: import('./note.js').NoteDoc | null;
 	noteUpdatedAt: string | null;
+	/** Spec 006 flags */
+	showNoteFull: boolean;
+	checklistMarks: boolean;
 	/** Usual weekdays for planning, 0 (Sun) … 6 (Sat). */
 	defaultDays: number[];
 	createdOn: DateStr;
@@ -29,6 +32,8 @@ export interface PlanView {
 	source: string;
 	/** practiceId → planned dates */
 	items: Record<number, DateStr[]>;
+	/** Spec 006: day notes by `${practiceId}|${date}` */
+	notes: Record<string, { note: import('./note.js').NoteDoc; updatedAt: string | null }>;
 }
 
 export interface WeekSummary {

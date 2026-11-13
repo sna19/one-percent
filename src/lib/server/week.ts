@@ -22,6 +22,8 @@ export function loadWeek(db: Db, start: DateStr, today: DateStr): WeekData {
 			defaultDays: practices.defaultDays,
 			note: practices.note,
 			noteUpdatedAt: practices.noteUpdatedAt,
+			showNoteFull: practices.showNoteFull,
+			checklistMarks: practices.checklistMarks,
 			createdOn: sql<string>`substr(${practices.createdAt}, 1, 10)`
 		})
 		.from(practices)

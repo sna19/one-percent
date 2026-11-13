@@ -1,6 +1,8 @@
 import { and, asc, desc, eq, gte, inArray, isNull, lt } from 'drizzle-orm';
 import { addDays, isDateStr, weekDays, weekStart, type DateStr } from '../dates.js';
 import type { PlanView, WeekSummary } from '../types.js';
+import { checklistAmount, isEmptyNote, isNoteDoc, NOTE_MAX, uncheck, type NoteDoc } from '../note.js';
+import { setEntry } from './entries.js';
 import type { Db } from './db.js';
 import {
 	appSettings,
@@ -39,6 +41,7 @@ export function getPlan(db: Db, start: DateStr): PlanView | null {
 	const plan = planRow(db, start);
 	if (!plan) return null;
 	const items: PlanView['items'] = {};
+	const notes: PlanView['notes'] = {};
 	for (const it of db
 		.select()
 		.from(planItems)
@@ -46,25 +49,32 @@ export function getPlan(db: Db, start: DateStr): PlanView | null {
 		.orderBy(asc(planItems.date))
 		.all()) {
 		(items[it.practiceId] ??= []).push(it.date);
+		if (it.note) notes[`${it.practiceId}|${it.date}`] = { note: JSON.parse(it.note), updatedAt: it.noteUpdatedAt };
 	}
-	return { weekStart: plan.weekStart, status: plan.status, source: plan.source, items };
+	return { weekStart: plan.weekStart, status: plan.status, source: plan.source, items, notes };
 }
 
-/** (practice, weekday) pairs a source would give; archived practices are skipped. */
-function sourcePairs(db: Db, start: DateStr, source: PlanSource): [number, number][] {
+/** Day note text as stored for a copy: boxes cleared (Spec 006), null when there is none. */
+function freshNote(json: string | null | undefined): string | null {
+	if (!json) return null;
+	return JSON.stringify(uncheck(JSON.parse(json) as NoteDoc));
+}
+
+/** (practice, weekday, day note) a source would give; archived practices are skipped. */
+function sourcePairs(db: Db, start: DateStr, source: PlanSource): [number, number, string | null][] {
 	const active = activePracticeIds(db);
-	let pairs: [number, number][] = [];
+	let pairs: [number, number, string | null][] = [];
 	if (source === 'empty') pairs = [];
 	else if (source === 'default') {
 		for (const p of db.select().from(practices).where(isNull(practices.archivedAt)).all())
-			for (const d of parseDays(p.defaultDays)) pairs.push([p.id, d]);
+			for (const d of parseDays(p.defaultDays)) pairs.push([p.id, d, null]);
 	} else if (source === 'previous' || source.startsWith('week:')) {
 		const from = source === 'previous' ? addDays(start, -7) : source.slice(5);
 		if (!isDateStr(from) || weekStart(from) !== from) throw new InputError('Неверная неделя');
-		const plan = getPlan(db, from);
+		const plan = planRow(db, from);
 		if (!plan) throw new InputError('На ту неделю плана нет');
-		for (const [pid, dates] of Object.entries(plan.items))
-			for (const d of dates) pairs.push([Number(pid), weekdayOf(d)]);
+		for (const it of db.select().from(planItems).where(eq(planItems.weekPlanId, plan.id)).all())
+			pairs.push([it.practiceId, weekdayOf(it.date), freshNote(it.note)]);
 	} else if (source.startsWith('template:')) {
 		const tid = Number(source.slice(9));
 		const tpl = db.select().from(planTemplates).where(eq(planTemplates.id, tid)).get();
@@ -74,7 +84,7 @@ function sourcePairs(db: Db, start: DateStr, source: PlanSource): [number, numbe
 			.from(planTemplateItems)
 			.where(eq(planTemplateItems.templateId, tid))
 			.all()
-			.map((t) => [t.practiceId, t.weekday]);
+			.map((t) => [t.practiceId, t.weekday, freshNote(t.note)]);
 	} else throw new InputError('Неизвестный источник плана');
 	return pairs.filter(([pid]) => active.has(pid));
 }
@@ -107,10 +117,14 @@ export function applySource(db: Db, start: DateStr, today: DateStr, source: Plan
 			tx.delete(planItems)
 				.where(and(eq(planItems.weekPlanId, plan.id), inArray(planItems.date, days)))
 				.run();
-		for (const [pid, wd] of pairs) {
+		const now = new Date().toISOString();
+		for (const [pid, wd, note] of pairs) {
 			const date = addDays(start, wd);
 			if (date < today) continue;
-			tx.insert(planItems).values({ weekPlanId: plan.id, practiceId: pid, date }).onConflictDoNothing().run();
+			tx.insert(planItems)
+				.values({ weekPlanId: plan.id, practiceId: pid, date, note, noteUpdatedAt: note ? now : null })
+				.onConflictDoNothing()
+				.run();
 		}
 		tx.update(weekPlans).set({ source, status: 'draft', confirmedAt: null }).where(eq(weekPlans.id, plan.id)).run();
 	});
@@ -190,7 +204,7 @@ export function confirmPlan(db: Db, start: DateStr, templateName?: string) {
 			for (const it of tx.select().from(planItems).where(eq(planItems.weekPlanId, plan.id)).all())
 				if (active.has(it.practiceId))
 					tx.insert(planTemplateItems)
-						.values({ templateId: tpl.id, practiceId: it.practiceId, weekday: weekdayOf(it.date) })
+						.values({ templateId: tpl.id, practiceId: it.practiceId, weekday: weekdayOf(it.date), note: freshNote(it.note) })
 						.onConflictDoNothing()
 						.run();
 		}
@@ -255,4 +269,34 @@ export function setPlanLimit(db: Db, limit: number | null) {
 			.onConflictDoUpdate({ target: appSettings.key, set: { value: String(limit) } })
 			.run();
 	}
+}
+
+/**
+ * Spec 006: saves the day note of a planned day; the later change wins. Past days may be edited
+ * (a late tick is honest). For a practice marked by checklist the day's mark follows the boxes.
+ */
+export function setPlanNote(db: Db, practiceId: number, date: DateStr, note: unknown, updatedAt: string): boolean {
+	if (!isDateStr(date)) throw new InputError('Неверная дата');
+	if (note !== null && !isNoteDoc(note)) throw new InputError('Заметка в неверном формате');
+	if (Number.isNaN(Date.parse(updatedAt))) throw new InputError('Неверное время изменения');
+	const doc = note as NoteDoc | null;
+	const empty = !doc || (isEmptyNote(doc) && !JSON.stringify(doc).includes('"taskItem"'));
+	const json = empty ? null : JSON.stringify(doc);
+	if (json && json.length > NOTE_MAX) throw new InputError('Заметка слишком длинная');
+	const item = db
+		.select()
+		.from(planItems)
+		.where(and(eq(planItems.practiceId, practiceId), eq(planItems.date, date)))
+		.get();
+	if (!item) throw new InputError('Заметка дня есть только у дня в плане');
+	if (item.noteUpdatedAt && item.noteUpdatedAt >= updatedAt) return false;
+	db.transaction((tx) => {
+		tx.update(planItems).set({ note: json, noteUpdatedAt: updatedAt }).where(eq(planItems.id, item.id)).run();
+		const p = tx.select().from(practices).where(eq(practices.id, practiceId)).get();
+		if (p?.checklistMarks) {
+			const amount = checklistAmount(empty ? null : doc, p);
+			if (amount !== null) setEntry(tx as unknown as Db, practiceId, date, amount);
+		}
+	});
+	return true;
 }

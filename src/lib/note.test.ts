@@ -29,3 +29,32 @@ describe('isNoteDoc', () => {
 		expect(isNoteDoc('<b>x</b>')).toBe(false);
 	});
 });
+
+describe('day notes (Spec 006)', async () => {
+	const { uncheck, checklistStats, checklistAmount, toggleTask } = await import('./note.js');
+	const task = (t: string, checked: boolean) => ({ type: 'taskItem', attrs: { checked }, content: [p(t)] });
+	const meals = doc(p('Питание'), {
+		type: 'taskList',
+		content: [task('завтрак', true), task('обед', true), task('ужин', false), task('вечер', false)]
+	}, { type: 'bulletList', content: [{ type: 'listItem', content: [p('вода')] }] });
+	const dose = { minDose: 1, normDose: 3 };
+
+	it('counts only checklist boxes', () => {
+		expect(checklistStats(meals)).toEqual({ total: 4, checked: 2 });
+	});
+	it('depth by the table: all → norm, half → min, less → 0, no checklist → manual', () => {
+		expect(checklistAmount(meals, dose)).toBe(1);
+		expect(checklistAmount(toggleTask(toggleTask(meals, 2), 3), dose)).toBe(3);
+		expect(checklistAmount(toggleTask(meals, 0), dose)).toBe(0);
+		expect(checklistAmount(doc(p('без чеклиста')), dose)).toBeNull();
+		expect(checklistAmount(null, dose)).toBeNull();
+	});
+	it('uncheck clears every box and leaves the source untouched', () => {
+		const fresh = uncheck(meals);
+		expect(checklistStats(fresh)).toEqual({ total: 4, checked: 0 });
+		expect(checklistStats(meals)).toEqual({ total: 4, checked: 2 });
+	});
+	it('toggleTask flips one box by position', () => {
+		expect(checklistStats(toggleTask(meals, 3))).toEqual({ total: 4, checked: 3 });
+	});
+});
