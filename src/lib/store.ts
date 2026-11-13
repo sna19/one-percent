@@ -1,5 +1,6 @@
 import { createStore, get, set, del, entries as idbEntries } from 'idb-keyval';
 import type { WeekData } from './types.js';
+import type { NoteDoc } from './note.js';
 
 /**
  * Offline layer. Weeks are cached as last seen; marks go to a queue keyed by practice+date,
@@ -7,6 +8,19 @@ import type { WeekData } from './types.js';
  */
 const weeks = createStore('one-percent', 'weeks');
 const queue = createStore('one-percent-queue', 'marks');
+/** Spec 005: note edits wait here too, one per practice; the server keeps the later change. */
+const notesQueue = createStore('one-percent-notes', 'notes');
+
+export interface NoteEdit {
+	practiceId: number;
+	note: NoteDoc | null;
+	/** client time of the change */
+	updatedAt: string;
+}
+
+export const enqueueNote = (n: NoteEdit) => set(n.practiceId, n, notesQueue);
+export const pendingNotes = async (): Promise<NoteEdit[]> =>
+	(await idbEntries<number, NoteEdit>(notesQueue).catch(() => [])).map(([, n]) => n);
 
 export interface Mark {
 	practiceId: number;
@@ -42,10 +56,22 @@ export function flush(): Promise<number> {
 					if (cur && cur.amount === m.amount) await del(key(m), queue);
 				} else break;
 			}
+			for (const n of await pendingNotes()) {
+				const r = await fetch('/api/note', {
+					method: 'PUT',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify(n)
+				}).catch(() => undefined);
+				if (!r) break;
+				if (r.ok || r.status === 400) {
+					const cur = await get<NoteEdit>(n.practiceId, notesQueue);
+					if (cur && cur.updatedAt === n.updatedAt) await del(n.practiceId, notesQueue);
+				} else break;
+			}
 		} finally {
 			flushing = undefined;
 		}
-		return (await pending()).length;
+		return (await pending()).length + (await pendingNotes()).length;
 	})();
 	return flushing;
 }

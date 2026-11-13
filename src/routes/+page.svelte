@@ -13,10 +13,12 @@
 		planWeekSummary,
 		type Lens
 	} from '#lib/groups.js';
-	import { cacheWeek, cachedWeek, enqueue, flush, pending } from '#lib/store.js';
+	import { cacheWeek, cachedWeek, enqueue, enqueueNote, flush, pending, pendingNotes } from '#lib/store.js';
 	import { dayTitle, doseHint, todayLists } from '#lib/today.js';
 	import { crossfade } from 'svelte/transition';
 	import { flip } from 'svelte/animate';
+	import NoteSheet from '#lib/NoteSheet.svelte';
+	import { firstLine, type NoteDoc } from '#lib/note.js';
 	import type { PracticeView, WeekData } from '#lib/types.js';
 
 	const DAY_NAMES = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
@@ -29,7 +31,13 @@
 	/** Why the last load failed: no network, or the server answered with an error. */
 	let problem = $state<string | undefined>();
 	let queued = $state(0);
-	let sheet = $state<{ p: PracticeView; date: string; value: string } | undefined>();
+	/** Spec 005: the practice sheet (dose for a day + the standing note). */
+	let sheet = $state<{ pid: number; date: string } | undefined>();
+	const sheetPractice = $derived(sheet ? week?.practices.find((x) => x.id === sheet!.pid) : undefined);
+	function openSheet(p: PracticeView, date: string) {
+		clearTimeout(timer);
+		sheet = { pid: p.id, date };
+	}
 
 	const days = $derived(weekDays(start));
 	const isCurrentWeek = $derived(start === weekStart(today));
@@ -150,6 +158,13 @@
 
 	async function withPending(w: WeekData) {
 		for (const m of await pending()) apply(w, m.practiceId, m.date, m.amount);
+		for (const n of await pendingNotes()) {
+			const p = w.practices.find((x) => x.id === n.practiceId);
+			if (p && (!p.noteUpdatedAt || n.updatedAt > p.noteUpdatedAt)) {
+				p.note = n.note;
+				p.noteUpdatedAt = n.updatedAt;
+			}
+		}
 		return w;
 	}
 
@@ -225,7 +240,7 @@
 		timer = setTimeout(() => {
 			longPressed = true;
 			navigator.vibrate?.(10);
-			sheet = { p, date, value: String(amountOf(p.id, date) ?? p.normDose) };
+			openSheet(p, date);
 		}, 450);
 	}
 	function cancel() {
@@ -237,10 +252,19 @@
 		mark(p, date, p.normDose);
 	}
 
-	function choose(amount: number) {
-		if (!sheet) return;
-		mark(sheet.p, sheet.date, amount);
-		sheet = undefined;
+	async function saveNote(p: PracticeView, doc: NoteDoc | null) {
+		const edit = { practiceId: p.id, note: doc, updatedAt: new Date().toISOString() };
+		if (week) {
+			const wp = week.practices.find((x) => x.id === p.id);
+			if (wp) {
+				wp.note = doc;
+				wp.noteUpdatedAt = edit.updatedAt;
+			}
+			await cacheWeek($state.snapshot(week));
+		}
+		await enqueueNote(edit);
+		queued = await flush();
+		offline = queued > 0;
 	}
 
 	onMount(() => {
@@ -403,32 +427,19 @@
 	<a class="settings" href="/settings" data-sveltekit-reload>Настройки</a>
 </main>
 
-{#if sheet}
-	{@const s = sheet}
-	<div class="backdrop" role="presentation" onclick={() => (sheet = undefined)}></div>
-	<div class="sheet" role="dialog" aria-label="Отметка">
-		<p class="sheet-title">{s.p.title} · {label(s.date)}</p>
-		<div class="choices">
-			<button onclick={() => choose(s.p.minDose)}>Минимум · {s.p.minDose} {s.p.unit}</button>
-			<button onclick={() => choose(s.p.normDose)}>Норма · {s.p.normDose} {s.p.unit}</button>
-		</div>
-		<form
-			class="exact"
-			onsubmit={(e) => {
-				e.preventDefault();
-				const v = Number(s.value.replace(',', '.'));
-				if (Number.isFinite(v) && v >= 0) choose(v);
-			}}
-		>
-			<input type="text" inputmode="decimal" bind:value={s.value} aria-label="Количество" />
-			<span>{s.p.unit}</span>
-			<button type="submit">Сохранить</button>
-		</form>
-		<div class="choices">
-			<button class="quiet" onclick={() => choose(0)}>Очистить</button>
-			<button class="quiet" onclick={() => (sheet = undefined)}>Отмена</button>
-		</div>
-	</div>
+{#if sheet && sheetPractice}
+	{@const sp = sheetPractice}
+	{@const sd = sheet.date}
+	{#key `${sp.id}|${sd}`}
+		<NoteSheet
+			p={sp}
+			dateLabel={sd === today ? 'сегодня' : label(sd)}
+			amount={amountOf(sp.id, sd)}
+			onDose={(a) => mark(sp, sd, a)}
+			onNote={(doc) => saveNote(sp, doc)}
+			onClose={() => (sheet = undefined)}
+		/>
+	{/key}
 {/if}
 
 {#snippet todayScreen()}
@@ -481,32 +492,37 @@
 {#snippet card(p: PracticeView, bonus: boolean)}
 	{@const a = amountOf(p.id, today)}
 	{@const dep = depth(a, p)}
-	<button
-		class="card"
-		data-depth={dep}
-		style={cellStyle(p.color)}
-		aria-label="{p.title}: {a ? `${a} ${p.unit}` : 'не отмечено'}{bonus ? ', бонус' : ''}"
-		onpointerdown={() => down(p, today)}
-		onpointerup={() => cardUp(p)}
-		onpointerleave={cancel}
-		onpointercancel={cancel}
-		oncontextmenu={(e) => e.preventDefault()}
-	>
-		<span class="box" aria-hidden="true">{#if counts(a, p)}<svg viewBox="0 0 12 12"><path d="M2.5 6.2 5 8.6 9.6 3.4" /></svg>{/if}</span>
-		<span class="ctext">
-			<span class="ctitle">{p.title}{#if bonus}<span class="tag">бонус</span>{/if}</span>
-			{#if p.goalTitle !== p.title}<small>{p.goalTitle}</small>{/if}
-		</span>
-		<span class="dose">{a && !counts(a, p) ? `${a} из ${p.normDose} ${p.unit}` : a ? `${a} ${p.unit}` : doseHint(p)}</span>
-	</button>
+	{@const line = firstLine(p.note)}
+	<div class="card-wrap" data-depth={dep}>
+		<button
+			class="card"
+			data-depth={dep}
+			style={cellStyle(p.color)}
+			aria-label="{p.title}: {a ? `${a} ${p.unit}` : 'не отмечено'}{bonus ? ', бонус' : ''}"
+			onpointerdown={() => down(p, today)}
+			onpointerup={() => cardUp(p)}
+			onpointerleave={cancel}
+			onpointercancel={cancel}
+			oncontextmenu={(e) => e.preventDefault()}
+		>
+			<span class="box" aria-hidden="true">{#if counts(a, p)}<svg viewBox="0 0 12 12"><path d="M2.5 6.2 5 8.6 9.6 3.4" /></svg>{/if}</span>
+			<span class="ctext">
+				<span class="ctitle">{p.title}{#if bonus}<span class="tag">бонус</span>{/if}</span>
+				{#if p.goalTitle !== p.title}<small>{p.goalTitle}</small>{/if}
+				{#if line}<span class="cline">→ {line}</span>{/if}
+			</span>
+			<span class="dose">{a && !counts(a, p) ? `${a} из ${p.normDose} ${p.unit}` : a ? `${a} ${p.unit}` : doseHint(p)}</span>
+		</button>
+		<button class="more-btn" aria-label="{p.title}: доза и заметка" onclick={() => openSheet(p, today)}>⋯</button>
+	</div>
 {/snippet}
 
 {#snippet practiceRow(p: PracticeView, title: string, sub: string, indent: boolean)}
 	{@const n = nOf(p)}
-	<div class="name" class:indent>
+	<button class="name pname" class:indent onclick={() => openSheet(p, today)} aria-label="{p.title}: доза и заметка">
 		<span>{title}</span>
 		{#if sub || n >= 2}<small>{[sub, n >= 2 ? without(n) : ''].filter(Boolean).join(' · ')}</small>{/if}
-	</div>
+	</button>
 	{#each days as d (d)}
 		{@const a = amountOf(p.id, d)}
 		{@const planned = isPlanned(p.id, d)}
@@ -1000,6 +1016,51 @@
 		gap: 6px;
 		cursor: pointer;
 	}
+	.card-wrap {
+		position: relative;
+	}
+	.card-wrap .card {
+		padding-right: 48px;
+	}
+	.more-btn {
+		position: absolute;
+		top: 50%;
+		right: 6px;
+		transform: translateY(-50%);
+		width: 40px;
+		height: 44px;
+		border: none;
+		background: none;
+		border-radius: 10px;
+		font-size: 20px;
+		line-height: 1;
+		color: var(--muted);
+		cursor: pointer;
+	}
+	.card-wrap[data-depth='1'] .more-btn,
+	.card-wrap[data-depth='1.5'] .more-btn {
+		color: #fff;
+	}
+	.cline {
+		font-size: 13px;
+		opacity: 0.9;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		margin-top: 2px;
+	}
+	button.pname {
+		background: none;
+		border: none;
+		padding: 0;
+		text-align: left;
+		font: inherit;
+		font-size: 14px;
+		color: var(--text);
+		cursor: pointer;
+		min-height: 36px;
+		justify-content: center;
+	}
 	.settings {
 		display: block;
 		width: fit-content;
@@ -1008,62 +1069,5 @@
 		color: var(--muted);
 		font-size: 14px;
 		text-decoration: none;
-	}
-	.backdrop {
-		position: fixed;
-		inset: 0;
-		background: rgb(0 0 0 / 0.35);
-	}
-	.sheet {
-		position: fixed;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		max-width: 560px;
-		margin: 0 auto;
-		background: var(--surface);
-		border-radius: 16px 16px 0 0;
-		padding: 16px 16px calc(env(safe-area-inset-bottom) + 16px);
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-	.sheet-title {
-		margin: 0 0 4px;
-		font-weight: 600;
-	}
-	.choices {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 8px;
-	}
-	.sheet button {
-		min-height: 44px;
-		border-radius: 10px;
-		border: 1px solid var(--line);
-		background: var(--bg);
-		cursor: pointer;
-	}
-	.sheet button.quiet {
-		background: none;
-	}
-	.exact {
-		display: flex;
-		gap: 8px;
-		align-items: center;
-	}
-	.exact input {
-		flex: 1;
-		min-width: 0;
-		min-height: 44px;
-		font-size: 17px;
-		padding: 0 12px;
-		border-radius: 10px;
-		border: 1px solid var(--line);
-		background: var(--bg);
-		color: var(--text);
-	}
-	.exact button {
-		padding: 0 16px;
 	}
 </style>
