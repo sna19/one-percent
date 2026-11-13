@@ -16,11 +16,32 @@
 		p: PracticeView;
 		dateLabel: string;
 		amount: number | undefined;
+		/** what the editor edits: the practice's standing note, or a day note (Spec 006) */
+		doc: NoteDoc | null;
+		/** shown above the editor, e.g. «План дня» */
+		noteTitle?: string;
+		/** dose row; hidden for a practice marked by its checklist, and in the planner */
+		showDose?: boolean;
+		/** switch between the day note and the practice note */
+		switchLabel?: string;
+		onSwitch?: () => void;
 		onDose: (amount: number) => void;
 		onNote: (doc: NoteDoc | null) => void;
 		onClose: () => void;
 	}
-	let { p, dateLabel, amount, onDose, onNote, onClose }: Props = $props();
+	let {
+		p,
+		dateLabel,
+		amount,
+		doc,
+		noteTitle,
+		showDose = true,
+		switchLabel,
+		onSwitch,
+		onDose,
+		onNote,
+		onClose
+	}: Props = $props();
 
 	let host: HTMLDivElement;
 	let editor: Editor | undefined;
@@ -76,7 +97,7 @@
 					}
 				})
 			],
-			content: p.note ?? '',
+			content: doc ?? '',
 			editorProps: { attributes: { 'aria-label': 'Заметка', class: 'note-editor' } },
 			onUpdate: () => {
 				dirty = true;
@@ -129,6 +150,7 @@
 		<button class="done" onclick={close}>Готово</button>
 	</header>
 
+	{#if showDose}
 	<div class="dose">
 		<button class:on={amount === p.minDose && p.minDose !== p.normDose} onclick={() => onDose(p.minDose)}>Мин · {p.minDose}</button>
 		<button class:on={amount === p.normDose} onclick={() => onDose(p.normDose)}>Норма · {p.normDose}</button>
@@ -145,6 +167,14 @@
 		<button class="quiet" disabled={!amount} onclick={() => onDose(0)}>Очистить</button>
 	</div>
 	<p class="state">{done ? `Отмечено: ${amount} ${p.unit}` : amount ? `${amount} из ${p.normDose} ${p.unit}` : `Не отмечено · ${p.unit}`}</p>
+	{/if}
+
+	{#if noteTitle || onSwitch}
+		<div class="note-head">
+			<span>{noteTitle ?? 'Заметка'}</span>
+			{#if onSwitch}<button class="switch" onclick={() => { save(); onSwitch?.(); }}>{switchLabel}</button>{/if}
+		</div>
+	{/if}
 
 	<div class="toolbar" role="toolbar" aria-label="Форматирование">
 		{#each tools as t (t.name)}
@@ -269,6 +299,29 @@
 		margin: -2px 0 0;
 		font-size: 13px;
 		color: var(--muted);
+	}
+	.note-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--muted);
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+	}
+	.switch {
+		border: none;
+		background: none;
+		padding: 6px 0;
+		font-size: 13px;
+		font-weight: 400;
+		text-transform: none;
+		letter-spacing: 0;
+		color: var(--text);
+		text-decoration: underline;
+		text-underline-offset: 2px;
 	}
 	.toolbar {
 		display: grid;

@@ -13,12 +13,13 @@
 		planWeekSummary,
 		type Lens
 	} from '#lib/groups.js';
-	import { cacheWeek, cachedWeek, enqueue, enqueueNote, flush, pending, pendingNotes } from '#lib/store.js';
+	import { cacheWeek, cachedWeek, enqueue, enqueueDayNote, enqueueNote, flush, pending, pendingDayNotes, pendingNotes } from '#lib/store.js';
 	import { dayTitle, doseHint, todayLists } from '#lib/today.js';
 	import { crossfade } from 'svelte/transition';
 	import { flip } from 'svelte/animate';
 	import NoteSheet from '#lib/NoteSheet.svelte';
-	import { firstLine, type NoteDoc } from '#lib/note.js';
+	import NoteView from '#lib/NoteView.svelte';
+	import { checklistAmount, checklistStats, firstLine, toggleTask, type NoteDoc } from '#lib/note.js';
 	import type { PracticeView, WeekData } from '#lib/types.js';
 
 	const DAY_NAMES = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
@@ -32,12 +33,17 @@
 	let problem = $state<string | undefined>();
 	let queued = $state(0);
 	/** Spec 005: the practice sheet (dose for a day + the standing note). */
-	let sheet = $state<{ pid: number; date: string } | undefined>();
+	/** Spec 006: a planned day opens on its day note, with a link to the practice's standing note. */
+	let sheet = $state<{ pid: number; date: string; mode: 'day' | 'practice' } | undefined>();
 	const sheetPractice = $derived(sheet ? week?.practices.find((x) => x.id === sheet!.pid) : undefined);
-	function openSheet(p: PracticeView, date: string) {
+	function openSheet(p: PracticeView, date: string, mode?: 'day' | 'practice') {
 		clearTimeout(timer);
-		sheet = { pid: p.id, date };
+		sheet = { pid: p.id, date, mode: mode ?? (isPlanned(p.id, date) ? 'day' : 'practice') };
 	}
+	const dayNoteOf = (pid: number, date: string): NoteDoc | null => week?.plan?.notes?.[`${pid}|${date}`]?.note ?? null;
+	/** marked by its day checklist: the practice has the setting and the day note has boxes */
+	const byChecklist = (p: PracticeView, date: string) =>
+		p.checklistMarks && checklistStats(dayNoteOf(p.id, date)).total > 0;
 
 	const days = $derived(weekDays(start));
 	const isCurrentWeek = $derived(start === weekStart(today));
@@ -104,6 +110,7 @@
 	function cardUp(p: PracticeView) {
 		clearTimeout(timer);
 		if (longPressed) return;
+		if (byChecklist(p, today)) return openSheet(p, today);
 		mark(p, today, counts(amountOf(p.id, today), p) ? 0 : p.normDose);
 	}
 	const nOf = (p: PracticeView) => daysWithout(p.lastDone, p.createdOn, today);
@@ -158,6 +165,14 @@
 
 	async function withPending(w: WeekData) {
 		for (const m of await pending()) apply(w, m.practiceId, m.date, m.amount);
+		for (const n of await pendingDayNotes()) {
+			const k = `${n.practiceId}|${n.date}`;
+			const cur = w.plan?.notes?.[k];
+			if (w.plan && (!cur?.updatedAt || n.updatedAt > cur.updatedAt)) {
+				if (n.note) w.plan.notes[k] = { note: n.note, updatedAt: n.updatedAt };
+				else delete w.plan.notes[k];
+			}
+		}
 		for (const n of await pendingNotes()) {
 			const p = w.practices.find((x) => x.id === n.practiceId);
 			if (p && (!p.noteUpdatedAt || n.updatedAt > p.noteUpdatedAt)) {
@@ -252,7 +267,31 @@
 		mark(p, date, p.normDose);
 	}
 
-	async function saveNote(p: PracticeView, doc: NoteDoc | null) {
+	/** Spec 006: day note of a planned day; for a practice marked by checklist the mark follows the boxes. */
+	async function saveDayNote(p: PracticeView, date: string, live: NoteDoc | null) {
+		// notes shown on screen are reactive proxies; the queue (IndexedDB) needs a plain copy
+		const doc = live ? ($state.snapshot(live) as NoteDoc) : null;
+		const edit = { practiceId: p.id, date, note: doc, updatedAt: new Date().toISOString() };
+		if (week?.plan) {
+			const k = `${p.id}|${date}`;
+			if (doc) week.plan.notes = { ...week.plan.notes, [k]: { note: doc, updatedAt: edit.updatedAt } };
+			else {
+				const { [k]: _, ...rest } = week.plan.notes;
+				week.plan.notes = rest;
+			}
+			await cacheWeek($state.snapshot(week));
+		}
+		await enqueueDayNote(edit);
+		const amount = p.checklistMarks ? checklistAmount(doc, p) : null;
+		if (amount !== null && amount !== (amountOf(p.id, date) ?? 0)) await mark(p, date, amount);
+		else {
+			queued = await flush();
+			offline = queued > 0;
+		}
+	}
+
+	async function saveNote(p: PracticeView, live: NoteDoc | null) {
+		const doc = live ? ($state.snapshot(live) as NoteDoc) : null;
 		const edit = { practiceId: p.id, note: doc, updatedAt: new Date().toISOString() };
 		if (week) {
 			const wp = week.practices.find((x) => x.id === p.id);
@@ -430,13 +469,20 @@
 {#if sheet && sheetPractice}
 	{@const sp = sheetPractice}
 	{@const sd = sheet.date}
-	{#key `${sp.id}|${sd}`}
+	{@const dayMode = sheet.mode === 'day'}
+	{@const planned = isPlanned(sp.id, sd)}
+	{#key `${sp.id}|${sd}|${sheet.mode}`}
 		<NoteSheet
 			p={sp}
 			dateLabel={sd === today ? 'сегодня' : label(sd)}
 			amount={amountOf(sp.id, sd)}
+			doc={dayMode ? dayNoteOf(sp.id, sd) : sp.note}
+			noteTitle={dayMode ? 'План дня' : planned ? 'Общая заметка практики' : undefined}
+			showDose={!byChecklist(sp, sd)}
+			switchLabel={dayMode ? 'Общая заметка практики' : planned ? 'План дня' : undefined}
+			onSwitch={planned ? () => (sheet = { pid: sp.id, date: sd, mode: dayMode ? 'practice' : 'day' }) : undefined}
 			onDose={(a) => mark(sp, sd, a)}
-			onNote={(doc) => saveNote(sp, doc)}
+			onNote={(doc) => (dayMode ? saveDayNote(sp, sd, doc) : saveNote(sp, doc))}
 			onClose={() => (sheet = undefined)}
 		/>
 	{/key}
@@ -490,9 +536,52 @@
 {/snippet}
 
 {#snippet card(p: PracticeView, bonus: boolean)}
+	{@const dayNote = isPlanned(p.id, today) ? dayNoteOf(p.id, today) : null}
+	{#if dayNote && (p.showNoteFull || byChecklist(p, today))}
+		{@render dayCard(p, dayNote)}
+	{:else}
+		{@render plainCard(p, bonus, firstLine(dayNote) || firstLine(p.note))}
+	{/if}
+{/snippet}
+
+{#snippet dayCard(p: PracticeView, dayNote: NoteDoc)}
 	{@const a = amountOf(p.id, today)}
 	{@const dep = depth(a, p)}
-	{@const line = firstLine(p.note)}
+	{@const auto = byChecklist(p, today)}
+	{@const st = checklistStats(dayNote)}
+	<div class="card-wrap" data-depth={dep}>
+		<div class="card daycard" data-depth={dep} style={cellStyle(p.color)}>
+			{#if !auto}
+				<button
+					class="box box-btn"
+					aria-label="{p.title}: {counts(a, p) ? 'снять отметку' : 'отметить норму'}"
+					onclick={() => mark(p, today, counts(a, p) ? 0 : p.normDose)}
+					>{#if counts(a, p)}<svg viewBox="0 0 12 12"><path d="M2.5 6.2 5 8.6 9.6 3.4" /></svg>{/if}</button
+				>
+			{/if}
+			<div class="ctext">
+				<span class="ctitle">{p.title}</span>
+				{#if p.goalTitle !== p.title}<small>{p.goalTitle}</small>{/if}
+				{#if p.showNoteFull}
+					<span class="plan-title">План дня</span>
+					<NoteView
+						doc={dayNote}
+						onToggle={(i) => saveDayNote(p, today, toggleTask(dayNote, i))}
+						onOpen={() => openSheet(p, today, 'day')}
+					/>
+				{:else}
+					<button class="cline cline-btn" onclick={() => openSheet(p, today, 'day')}>→ {firstLine(dayNote)}</button>
+				{/if}
+			</div>
+			<span class="dose">{auto ? `${st.checked} из ${st.total}` : a ? `${a} ${p.unit}` : doseHint(p)}</span>
+		</div>
+		<button class="more-btn" aria-label="{p.title}: план дня и заметка" onclick={() => openSheet(p, today, 'day')}>⋯</button>
+	</div>
+{/snippet}
+
+{#snippet plainCard(p: PracticeView, bonus: boolean, line: string)}
+	{@const a = amountOf(p.id, today)}
+	{@const dep = depth(a, p)}
 	<div class="card-wrap" data-depth={dep}>
 		<button
 			class="card"
@@ -1018,6 +1107,44 @@
 	}
 	.card-wrap {
 		position: relative;
+	}
+	/* Spec 006: a day card is not one big button — the box marks, the text opens the day note */
+	.daycard {
+		cursor: default;
+		align-items: flex-start;
+		box-sizing: border-box;
+	}
+	.card-wrap:has(.daycard) .more-btn {
+		top: 8px;
+		transform: none;
+	}
+	.daycard .dose {
+		margin-top: 3px;
+	}
+	.box-btn {
+		padding: 0;
+		background: none;
+		cursor: pointer;
+		color: var(--fg);
+		margin-top: 2px;
+	}
+	.plan-title {
+		margin-top: 6px;
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		opacity: 0.75;
+	}
+	.cline-btn {
+		border: none;
+		background: none;
+		padding: 0;
+		text-align: left;
+		color: inherit;
+		font: inherit;
+		font-size: 13px;
+		cursor: pointer;
 	}
 	.card-wrap .card {
 		padding-right: 48px;

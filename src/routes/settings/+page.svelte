@@ -271,6 +271,15 @@
 			{/each}
 		</div>
 	</fieldset>
+	<fieldset>
+		<legend>План дня</legend>
+		<label class="toggle"
+			><input type="checkbox" name="showNoteFull" checked={p?.showNoteFull ?? false} /> Показывать заметку дня целиком</label
+		>
+		<label class="toggle"
+			><input type="checkbox" name="checklistMarks" checked={p?.checklistMarks ?? false} /> Отметка по чеклисту заметки дня</label
+		>
+	</fieldset>
 	<div class="three">
 		<label>Единица <input name="unit" value={p?.unit ?? ''} placeholder="мин" required /></label>
 		<label>Минимум <input name="minDose" inputmode="decimal" value={p?.minDose ?? ''} required /></label>
@@ -531,6 +540,19 @@
 	.wd input:focus-visible + span {
 		outline: 2px solid var(--text);
 		outline-offset: 2px;
+	}
+	.toggle {
+		flex-direction: row;
+		align-items: center;
+		gap: 10px;
+		min-height: 40px;
+		font-size: 15px;
+		color: var(--text);
+	}
+	.toggle input {
+		width: 20px;
+		height: 20px;
+		flex: none;
 	}
 	.limit {
 		flex-direction: row;

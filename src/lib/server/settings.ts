@@ -77,6 +77,8 @@ export function savePractice(db: Db, f: FormData) {
 		goalId: need(id(f, 'goalId'), 'цель'),
 		formatId: id(f, 'formatId') ?? null,
 		defaultDays: days(f),
+		showNoteFull: f.get('showNoteFull') === 'on',
+		checklistMarks: f.get('checklistMarks') === 'on',
 		unit: str(f, 'unit'),
 		minDose: num(f, 'minDose'),
 		normDose: num(f, 'normDose')

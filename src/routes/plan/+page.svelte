@@ -5,6 +5,9 @@
 	import { colorOf } from '#lib/palette.js';
 	import { groupPractices } from '#lib/groups.js';
 	import type { PlanView, PracticeView, WeekSummary } from '#lib/types.js';
+	import NoteSheet from '#lib/NoteSheet.svelte';
+	import { isEmptyNote, type NoteDoc } from '#lib/note.js';
+	import { enqueueDayNote, flush } from '#lib/store.js';
 
 	/** Spec 003 — plan a week in about a minute: pick a source, adjust, confirm. */
 	interface PlannerData {
@@ -88,6 +91,39 @@
 			const [pid, d] = key.split('|');
 			show(Number(pid), d, on);
 		}
+	}
+
+	// Spec 006: a planned day has a menu — its day note, or taking it out of the plan.
+	let menu = $state<{ p: PracticeView; d: string } | undefined>();
+	let noteFor = $state<{ p: PracticeView; d: string } | undefined>();
+	const noteOf = (pid: number, d: string): NoteDoc | null => data?.plan?.notes?.[`${pid}|${d}`]?.note ?? null;
+	const hasNote = (pid: number, d: string) => {
+		const n = noteOf(pid, d);
+		return !!n && (!isEmptyNote(n) || JSON.stringify(n).includes('"taskItem"'));
+	};
+
+	function cellTap(p: PracticeView, d: string) {
+		if (isPlanned(p.id, d)) menu = { p, d };
+		else if (d >= today) toggle(p, d);
+	}
+
+	function unplan(p: PracticeView, d: string) {
+		menu = undefined;
+		if (hasNote(p.id, d) && !window.confirm(`Убрать ${label(d)} из плана? Заметка этого дня удалится.`)) return;
+		toggle(p, d);
+	}
+
+	async function saveDayNote(p: PracticeView, d: string, doc: NoteDoc | null) {
+		const updatedAt = new Date().toISOString();
+		if (data?.plan) {
+			const k = `${p.id}|${d}`;
+			const notes = { ...(data.plan.notes ?? {}) };
+			if (doc) notes[k] = { note: doc, updatedAt };
+			else delete notes[k];
+			data.plan.notes = notes;
+		}
+		await enqueueDayNote({ practiceId: p.id, date: d, note: doc, updatedAt });
+		await flush();
 	}
 
 	const toggle = (p: PracticeView, d: string) => {
@@ -198,12 +234,13 @@
 								class="cell"
 								class:on={isPlanned(p.id, d)}
 								class:usual={p.defaultDays.includes(new Date(d + 'T12:00').getDay())}
+								class:past={d < today}
 								style={style(p.color)}
-								disabled={d < today}
+								disabled={d < today && !isPlanned(p.id, d)}
 								aria-pressed={isPlanned(p.id, d)}
-								aria-label="{p.title}, {label(d)}"
-								onclick={() => toggle(p, d)}
-							></button>
+								aria-label="{p.title}, {label(d)}{hasNote(p.id, d) ? ', есть заметка дня' : ''}"
+								onclick={() => cellTap(p, d)}
+							>{#if hasNote(p.id, d)}<svg class="has-note" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3.5h6M3 6h6M3 8.5h4" /></svg>{/if}</button>
 						{/each}
 					{/each}
 				{/each}
@@ -220,6 +257,39 @@
 		</section>
 	{/if}
 </main>
+
+{#if menu}
+	{@const m = menu}
+	<div class="backdrop" role="presentation" onclick={() => (menu = undefined)}></div>
+	<div class="menu" role="dialog" aria-label="{m.p.title}, {label(m.d)}">
+		<p>{m.p.title} · {label(m.d)}</p>
+		<button
+			onclick={() => {
+				noteFor = m;
+				menu = undefined;
+			}}>Заметка дня{hasNote(m.p.id, m.d) ? '' : ' — добавить'}</button
+		>
+		{#if m.d >= today}<button class="danger" onclick={() => unplan(m.p, m.d)}>Убрать из плана</button>{/if}
+		<button class="quiet" onclick={() => (menu = undefined)}>Отмена</button>
+	</div>
+{/if}
+
+{#if noteFor}
+	{@const n = noteFor}
+	{#key `${n.p.id}|${n.d}`}
+		<NoteSheet
+			p={n.p}
+			dateLabel={label(n.d)}
+			amount={undefined}
+			doc={noteOf(n.p.id, n.d)}
+			noteTitle="План дня"
+			showDose={false}
+			onDose={() => {}}
+			onNote={(doc) => saveDayNote(n.p, n.d, doc)}
+			onClose={() => (noteFor = undefined)}
+		/>
+	{/key}
+{/if}
 
 <style>
 	main {
@@ -369,6 +439,64 @@
 	.cell.on {
 		border: 2px solid var(--c);
 		background: color-mix(in oklab, var(--c) 22%, transparent);
+	}
+	.cell {
+		position: relative;
+	}
+	.cell.past:not(:disabled) {
+		opacity: 0.6;
+	}
+	.has-note {
+		position: absolute;
+		inset: 0;
+		margin: auto;
+		width: 55%;
+		height: 55%;
+		fill: none;
+		stroke: var(--c);
+		stroke-width: 1.4;
+		stroke-linecap: round;
+	}
+	.backdrop {
+		position: fixed;
+		inset: 0;
+		background: rgb(0 0 0 / 0.35);
+		z-index: 10;
+	}
+	.menu {
+		position: fixed;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 11;
+		max-width: 560px;
+		margin: 0 auto;
+		background: var(--surface);
+		border-radius: 16px 16px 0 0;
+		padding: 14px 16px calc(env(safe-area-inset-bottom) + 14px);
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.menu p {
+		margin: 0 0 4px;
+		font-weight: 600;
+	}
+	.menu button {
+		min-height: 48px;
+		border-radius: 10px;
+		border: 1px solid var(--line);
+		background: var(--bg);
+		color: var(--text);
+		font-size: 16px;
+	}
+	.menu .danger {
+		color: #b5541b;
+	}
+	.menu .quiet {
+		background: none;
+		border: none;
+		color: var(--muted);
 	}
 	.cell:disabled {
 		opacity: 0.45;

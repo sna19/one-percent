@@ -96,3 +96,13 @@ describe('planning settings', () => {
 		expect(() => savePlanLimit(db, form({ limit: '-1' }))).toThrow(InputError);
 	});
 });
+
+describe('day plan flags', () => {
+	it('two practice toggles, off unless checked', () => {
+		const db = setup();
+		const f = form({ id: 3, title: 'HBR', goalId: 3, unit: 'стр', minDose: 1, normDose: 3, showNoteFull: 'on' });
+		savePractice(db, f);
+		const p = loadSettings(db).practices.find((x) => x.id === 3)!;
+		expect([p.showNoteFull, p.checklistMarks]).toEqual([true, false]);
+	});
+});

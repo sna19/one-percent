@@ -19,6 +19,15 @@ export interface NoteEdit {
 }
 
 export const enqueueNote = (n: NoteEdit) => set(n.practiceId, n, notesQueue);
+
+/** Spec 006: day notes, one per planned day. */
+const dayNotesQueue = createStore('one-percent-day-notes', 'notes');
+export interface DayNoteEdit extends NoteEdit {
+	date: string;
+}
+export const enqueueDayNote = (n: DayNoteEdit) => set(`${n.practiceId}|${n.date}`, n, dayNotesQueue);
+export const pendingDayNotes = async (): Promise<DayNoteEdit[]> =>
+	(await idbEntries<string, DayNoteEdit>(dayNotesQueue).catch(() => [])).map(([, n]) => n);
 export const pendingNotes = async (): Promise<NoteEdit[]> =>
 	(await idbEntries<number, NoteEdit>(notesQueue).catch(() => [])).map(([, n]) => n);
 
@@ -68,10 +77,23 @@ export function flush(): Promise<number> {
 					if (cur && cur.updatedAt === n.updatedAt) await del(n.practiceId, notesQueue);
 				} else break;
 			}
+			for (const n of await pendingDayNotes()) {
+				const k = `${n.practiceId}|${n.date}`;
+				const r = await fetch('/api/day-note', {
+					method: 'PUT',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify(n)
+				}).catch(() => undefined);
+				if (!r) break;
+				if (r.ok || r.status === 400) {
+					const cur = await get<DayNoteEdit>(k, dayNotesQueue);
+					if (cur && cur.updatedAt === n.updatedAt) await del(k, dayNotesQueue);
+				} else break;
+			}
 		} finally {
 			flushing = undefined;
 		}
-		return (await pending()).length + (await pendingNotes()).length;
+		return (await pending()).length + (await pendingNotes()).length + (await pendingDayNotes()).length;
 	})();
 	return flushing;
 }
