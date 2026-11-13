@@ -65,3 +65,20 @@ export function dayTitle(d: DateStr): string {
 export function doseHint(p: Pick<PracticeView, 'minDose' | 'normDose' | 'unit'>): string {
 	return p.minDose < p.normDose ? `мин ${p.minDose} · норма ${p.normDose} ${p.unit}` : `норма ${p.normDose} ${p.unit}`;
 }
+
+/**
+ * «Порядок»: a list on Today shows a subset of practices. Its new order goes into the slots its
+ * members held in the overall order, so practices not in the list keep their places.
+ */
+export function mergeOrder(all: number[], subsetNew: number[]): number[] {
+	const inSubset = new Set(subsetNew);
+	const queue = [...subsetNew];
+	return all.map((id) => (inSubset.has(id) ? queue.shift()! : id));
+}
+
+/** Moves `id` to position `to` within `ids`. */
+export function moveTo(ids: number[], id: number, to: number): number[] {
+	const rest = ids.filter((x) => x !== id);
+	rest.splice(Math.max(0, Math.min(to, rest.length)), 0, id);
+	return rest;
+}

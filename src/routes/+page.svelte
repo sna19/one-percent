@@ -14,7 +14,7 @@
 		type Lens
 	} from '#lib/groups.js';
 	import { cacheWeek, cachedWeek, enqueue, enqueueDayNote, enqueueNote, flush, pending, pendingDayNotes, pendingNotes } from '#lib/store.js';
-	import { dayTitle, doseHint, todayLists } from '#lib/today.js';
+	import { dayTitle, doseHint, mergeOrder, moveTo, todayLists } from '#lib/today.js';
 	import { crossfade } from 'svelte/transition';
 	import { flip } from 'svelte/animate';
 	import NoteSheet from '#lib/NoteSheet.svelte';
@@ -104,12 +104,59 @@
 	const summary = $derived(planWeekSummary(practices, days, isPlanned, amountOf));
 	const day = $derived(todayLists(practices, today, isPlanned, amountOf));
 	let moreOpen = $state(false);
+
+	// «Порядок» (#9): drag cards by their ≡ handle; the order is the practices' order everywhere.
+	type ListName = 'todo' | 'done' | 'other';
+	let reorder = $state(false);
+	let drag = $state<{ list: ListName; id: number; ids: number[] } | undefined>();
+	const listEls: Partial<Record<ListName, HTMLUListElement>> = {};
+	function inOrder<T>(list: ListName, items: T[], idOf: (x: T) => number): T[] {
+		if (drag?.list !== list) return items;
+		const pos = new Map(drag.ids.map((id, i) => [id, i]));
+		return [...items].sort((a, b) => (pos.get(idOf(a)) ?? 0) - (pos.get(idOf(b)) ?? 0));
+	}
+	function dragStart(e: PointerEvent, list: ListName, id: number, ids: number[]) {
+		e.preventDefault();
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+		drag = { list, id, ids };
+	}
+	function dragMove(e: PointerEvent) {
+		if (!drag) return;
+		const ul = listEls[drag.list];
+		if (!ul) return;
+		const others = [...ul.children].filter((li) => (li as HTMLElement).dataset.id !== String(drag!.id));
+		const to = others.filter((li) => {
+			const r = li.getBoundingClientRect();
+			return r.top + r.height / 2 < e.clientY;
+		}).length;
+		const next = moveTo(drag.ids, drag.id, to);
+		if (next.join() !== drag.ids.join()) drag = { ...drag, ids: next };
+	}
+	async function dragEnd() {
+		if (!drag || !week) return (drag = undefined);
+		const order = mergeOrder(week.practices.map((p) => p.id), drag.ids);
+		drag = undefined;
+		const pos = new Map(order.map((id, i) => [id, i]));
+		week.practices = [...week.practices].sort((a, b) => (pos.get(a.id) ?? 0) - (pos.get(b.id) ?? 0));
+		await cacheWeek($state.snapshot(week));
+		try {
+			const r = await fetch('/api/order', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ ids: order })
+			});
+			if (!r.ok) throw new Error();
+		} catch {
+			problem = 'Порядок не сохранился: нет связи с сервером';
+			offline = true;
+		}
+	}
 	const [send, receive] = crossfade({ duration: 220 });
 
 	// Card: tap = norm, tap again = clear; long press = the same choice as on a cell.
 	function cardUp(p: PracticeView) {
 		clearTimeout(timer);
-		if (longPressed) return;
+		if (longPressed || reorder) return;
 		if (byChecklist(p, today)) return openSheet(p, today);
 		mark(p, today, counts(amountOf(p.id, today), p) ? 0 : p.normDose);
 	}
@@ -250,6 +297,7 @@
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let longPressed = false;
 	function down(p: PracticeView, date: string) {
+		if (reorder) return;
 		longPressed = false;
 		clearTimeout(timer);
 		timer = setTimeout(() => {
@@ -336,8 +384,11 @@
 <main>
 	{#if tab === 'today'}
 	<header class="today-head">
-		<h1>{dayTitle(today)}</h1>
-		{#if week && day.planned}<span>по плану {day.plannedDone} из {day.planned}</span>{/if}
+		<div>
+			<h1>{dayTitle(today)}</h1>
+			{#if week && day.planned}<span>по плану {day.plannedDone} из {day.planned}</span>{/if}
+		</div>
+		{#if week}<button class="order-btn" class:on={reorder} aria-pressed={reorder} onclick={() => (reorder = !reorder)}>{reorder ? 'Готово' : 'Порядок'}</button>{/if}
 	</header>
 	{:else}
 	<header>
@@ -499,10 +550,10 @@
 
 	{#if day.todo.length}
 		<h2 class="zone">К выполнению</h2>
-		<ul class="cards">
-			{#each day.todo as p (p.id)}
-				<li in:receive={{ key: p.id }} out:send={{ key: p.id }} animate:flip={{ duration: 220 }}>
-					{@render card(p, false)}
+		<ul class="cards" class:reorder bind:this={listEls.todo}>
+			{#each inOrder('todo', day.todo, (p) => p.id) as p (p.id)}
+				<li data-id={p.id} class:dragging={drag?.id === p.id} in:receive={{ key: p.id }} out:send={{ key: p.id }} animate:flip={{ duration: 180 }}>
+					{@render card(p, false, 'todo', day.todo.map((x) => x.id))}
 				</li>
 			{/each}
 		</ul>
@@ -510,10 +561,10 @@
 
 	{#if day.done.length}
 		<h2 class="zone">Сделано</h2>
-		<ul class="cards">
-			{#each day.done as d (d.p.id)}
-				<li in:receive={{ key: d.p.id }} out:send={{ key: d.p.id }} animate:flip={{ duration: 220 }}>
-					{@render card(d.p, d.bonus)}
+		<ul class="cards" class:reorder bind:this={listEls.done}>
+			{#each inOrder('done', day.done, (d) => d.p.id) as d (d.p.id)}
+				<li data-id={d.p.id} class:dragging={drag?.id === d.p.id} in:receive={{ key: d.p.id }} out:send={{ key: d.p.id }} animate:flip={{ duration: 180 }}>
+					{@render card(d.p, d.bonus, 'done', day.done.map((x) => x.p.id))}
 				</li>
 			{/each}
 		</ul>
@@ -522,10 +573,10 @@
 	{#if day.other.length}
 		<details class="more" open={moreOpen || !day.planned} ontoggle={(e) => (moreOpen = (e.currentTarget as HTMLDetailsElement).open)}>
 			<summary>Сделать что-то ещё <span class="count">{day.other.length}</span></summary>
-			<ul class="cards">
-				{#each day.other as p (p.id)}
-					<li in:receive={{ key: p.id }} out:send={{ key: p.id }} animate:flip={{ duration: 220 }}>
-						{@render card(p, false)}
+			<ul class="cards" class:reorder bind:this={listEls.other}>
+				{#each inOrder('other', day.other, (p) => p.id) as p (p.id)}
+					<li data-id={p.id} class:dragging={drag?.id === p.id} in:receive={{ key: p.id }} out:send={{ key: p.id }} animate:flip={{ duration: 180 }}>
+						{@render card(p, false, 'other', day.other.map((x) => x.id))}
 					</li>
 				{/each}
 			</ul>
@@ -535,22 +586,37 @@
 	{#if week?.plan}<p class="week-sum"><a href="/plan?start={start}">Изменить план</a></p>{/if}
 {/snippet}
 
-{#snippet card(p: PracticeView, bonus: boolean)}
+{#snippet card(p: PracticeView, bonus: boolean, list: ListName, ids: number[])}
 	{@const dayNote = isPlanned(p.id, today) ? dayNoteOf(p.id, today) : null}
 	{#if dayNote && (p.showNoteFull || byChecklist(p, today))}
-		{@render dayCard(p, dayNote)}
+		{@render dayCard(p, dayNote, list, ids)}
 	{:else}
-		{@render plainCard(p, bonus, firstLine(dayNote) || firstLine(p.note))}
+		{@render plainCard(p, bonus, firstLine(dayNote) || firstLine(p.note), list, ids)}
 	{/if}
 {/snippet}
 
-{#snippet dayCard(p: PracticeView, dayNote: NoteDoc)}
+{#snippet sideButton(p: PracticeView, list: ListName, ids: number[], label: string, open: () => void)}
+	{#if reorder}
+		<button
+			class="more-btn handle"
+			aria-label="{p.title}: перетащить"
+			onpointerdown={(e) => dragStart(e, list, p.id, ids)}
+			onpointermove={dragMove}
+			onpointerup={dragEnd}
+			onpointercancel={dragEnd}>≡</button
+		>
+	{:else}
+		<button class="more-btn" aria-label={label} onclick={open}>⋯</button>
+	{/if}
+{/snippet}
+
+{#snippet dayCard(p: PracticeView, dayNote: NoteDoc, list: ListName, ids: number[])}
 	{@const a = amountOf(p.id, today)}
 	{@const dep = depth(a, p)}
 	{@const auto = byChecklist(p, today)}
 	{@const st = checklistStats(dayNote)}
 	<div class="card-wrap" data-depth={dep}>
-		<div class="card daycard" data-depth={dep} style={cellStyle(p.color)}>
+		<div class="card daycard" class:nobox={auto} data-depth={dep} style={cellStyle(p.color)}>
 			{#if !auto}
 				<button
 					class="box box-btn"
@@ -562,6 +628,10 @@
 			<div class="ctext">
 				<span class="ctitle">{p.title}</span>
 				{#if p.goalTitle !== p.title}<small>{p.goalTitle}</small>{/if}
+			</div>
+			<span class="dose" class:count={auto}>{auto ? `${st.checked} из ${st.total}` : a ? `${a} ${p.unit}` : doseHint(p)}</span>
+			<!-- the note takes the card's whole width under its header row -->
+			<div class="cnote">
 				{#if p.showNoteFull}
 					<span class="plan-title">План дня</span>
 					<NoteView
@@ -573,13 +643,12 @@
 					<button class="cline cline-btn" onclick={() => openSheet(p, today, 'day')}>→ {firstLine(dayNote)}</button>
 				{/if}
 			</div>
-			<span class="dose">{auto ? `${st.checked} из ${st.total}` : a ? `${a} ${p.unit}` : doseHint(p)}</span>
 		</div>
-		<button class="more-btn" aria-label="{p.title}: план дня и заметка" onclick={() => openSheet(p, today, 'day')}>⋯</button>
+		{@render sideButton(p, list, ids, `${p.title}: план дня и заметка`, () => openSheet(p, today, 'day'))}
 	</div>
 {/snippet}
 
-{#snippet plainCard(p: PracticeView, bonus: boolean, line: string)}
+{#snippet plainCard(p: PracticeView, bonus: boolean, line: string, list: ListName, ids: number[])}
 	{@const a = amountOf(p.id, today)}
 	{@const dep = depth(a, p)}
 	<div class="card-wrap" data-depth={dep}>
@@ -598,11 +667,11 @@
 			<span class="ctext">
 				<span class="ctitle">{p.title}{#if bonus}<span class="tag">бонус</span>{/if}</span>
 				{#if p.goalTitle !== p.title}<small>{p.goalTitle}</small>{/if}
-				{#if line}<span class="cline">→ {line}</span>{/if}
 			</span>
 			<span class="dose">{a && !counts(a, p) ? `${a} из ${p.normDose} ${p.unit}` : a ? `${a} ${p.unit}` : doseHint(p)}</span>
+			{#if line}<span class="cnote cline">→ {line}</span>{/if}
 		</button>
-		<button class="more-btn" aria-label="{p.title}: доза и заметка" onclick={() => openSheet(p, today)}>⋯</button>
+		{@render sideButton(p, list, ids, `${p.title}: доза и заметка`, () => openSheet(p, today))}
 	</div>
 {/snippet}
 
@@ -939,9 +1008,18 @@
 	.week-sum a {
 		color: var(--text);
 	}
+	.today-head span {
+		display: block;
+		margin-top: 2px;
+	}
+	.dose.count {
+		white-space: nowrap;
+		font-size: 14px;
+		font-weight: 600;
+	}
 	.today-head {
 		display: flex;
-		align-items: baseline;
+		align-items: flex-start;
 		justify-content: space-between;
 		gap: 12px;
 		min-height: 44px;
@@ -999,14 +1077,17 @@
 		flex-direction: column;
 		gap: 8px;
 	}
+	/* header row: box · title · dose (· room for ⋯); the note runs full width below (#9) */
 	.card {
 		--c: var(--c-light);
 		--fg: var(--text);
 		width: 100%;
+		box-sizing: border-box;
 		min-height: 60px;
-		display: flex;
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr) minmax(0, 36%);
 		align-items: center;
-		gap: 12px;
+		column-gap: 12px;
 		padding: 10px 14px;
 		border-radius: 14px;
 		border: 2px solid var(--c);
@@ -1114,9 +1195,36 @@
 		align-items: flex-start;
 		box-sizing: border-box;
 	}
-	.card-wrap:has(.daycard) .more-btn {
-		top: 8px;
-		transform: none;
+	.more-btn.handle {
+		touch-action: none;
+		font-size: 22px;
+		cursor: grab;
+	}
+	.cards.reorder .card {
+		pointer-events: none;
+	}
+	.cards.reorder .card-wrap {
+		user-select: none;
+		-webkit-user-select: none;
+	}
+	li.dragging .card {
+		box-shadow: 0 6px 18px rgb(0 0 0 / 0.25);
+		transform: scale(1.02);
+	}
+	.order-btn {
+		min-height: 32px;
+		padding: 0 12px;
+		border-radius: 16px;
+		border: 1px solid var(--line);
+		background: none;
+		color: var(--muted);
+		font-size: 13px;
+		cursor: pointer;
+	}
+	.order-btn.on {
+		background: var(--text);
+		border-color: var(--text);
+		color: var(--bg);
 	}
 	.daycard .dose {
 		margin-top: 3px;
@@ -1146,14 +1254,28 @@
 		font-size: 13px;
 		cursor: pointer;
 	}
-	.card-wrap .card {
-		padding-right: 48px;
+	.card .dose {
+		margin-right: 34px;
+	}
+	.card.nobox {
+		grid-template-columns: minmax(0, 1fr) minmax(0, 36%);
+	}
+	.card .dose {
+		max-width: none;
+		justify-self: end;
+	}
+	.cnote {
+		grid-column: 1 / -1;
+		min-width: 0;
+		margin-top: 6px;
+	}
+	.cline.cnote {
+		display: block;
 	}
 	.more-btn {
 		position: absolute;
-		top: 50%;
+		top: 8px;
 		right: 6px;
-		transform: translateY(-50%);
 		width: 40px;
 		height: 44px;
 		border: none;

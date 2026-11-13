@@ -62,3 +62,16 @@ describe('labels', () => {
 		expect(doseHint({ minDose: 1, normDose: 1, unit: 'трен' })).toBe('норма 1 трен');
 	});
 });
+
+describe('reorder', async () => {
+	const { mergeOrder, moveTo } = await import('./today.js');
+	it('a list reorders inside the slots its practices held', () => {
+		// overall 1..6; the list shows 2, 4, 5 and becomes 5, 2, 4
+		expect(mergeOrder([1, 2, 3, 4, 5, 6], [5, 2, 4])).toEqual([1, 5, 3, 2, 4, 6]);
+	});
+	it('moveTo', () => {
+		expect(moveTo([1, 2, 3, 4], 4, 0)).toEqual([4, 1, 2, 3]);
+		expect(moveTo([1, 2, 3, 4], 1, 2)).toEqual([2, 3, 1, 4]);
+		expect(moveTo([1, 2, 3], 2, 9)).toEqual([1, 3, 2]);
+	});
+});

@@ -147,3 +147,18 @@ export function moveItem(db: Db, f: FormData) {
 		tx.update(t).set({ sortOrder: i }).where(eq(t.id, all[j].id)).run();
 	});
 }
+
+/**
+ * Spec #9 «Порядок»: the order of practices as dragged on Today. The given ids come first in that
+ * order, any others (archived, not on screen) keep their relative order after them.
+ */
+export function setPracticeOrder(db: Db, ids: number[]) {
+	if (!Array.isArray(ids) || !ids.every((x) => Number.isInteger(x))) throw new InputError('Неверный порядок');
+	const all = db.select({ id: practices.id }).from(practices).orderBy(asc(practices.sortOrder), asc(practices.id)).all();
+	const known = new Set(all.map((p) => p.id));
+	const given = [...new Set(ids)].filter((x) => known.has(x));
+	const rest = all.map((p) => p.id).filter((x) => !given.includes(x));
+	db.transaction((tx) => {
+		[...given, ...rest].forEach((pid, n) => tx.update(practices).set({ sortOrder: n }).where(eq(practices.id, pid)).run());
+	});
+}

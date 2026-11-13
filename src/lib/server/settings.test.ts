@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { openDb } from './db.js';
 import { seedIfEmpty } from './seed.js';
-import { InputError, loadSettings, moveItem, saveFormat, savePlanLimit, savePractice, setArchived } from './settings.js';
+import { InputError, loadSettings, moveItem, saveFormat, savePlanLimit, savePractice, setArchived, setPracticeOrder } from './settings.js';
 import { loadWeek } from './week.js';
 
 const form = (o: Record<string, string | number>) => {
@@ -104,5 +104,15 @@ describe('day plan flags', () => {
 		savePractice(db, f);
 		const p = loadSettings(db).practices.find((x) => x.id === 3)!;
 		expect([p.showNoteFull, p.checklistMarks]).toEqual([true, false]);
+	});
+});
+
+describe('setPracticeOrder', () => {
+	it('puts given ids first, keeps the rest after, ignores unknown ids', () => {
+		const db = setup();
+		setArchived(db, form({ kind: 'practice', id: 2 }), true);
+		setPracticeOrder(db, [4, 1, 99, 3]);
+		expect(loadSettings(db).practices.map((p) => p.id)).toEqual([4, 1, 3, 2]);
+		expect(() => setPracticeOrder(db, ['x' as unknown as number])).toThrow(InputError);
 	});
 });
