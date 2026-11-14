@@ -25,6 +25,9 @@
 		/** switch between the day note and the practice note */
 		switchLabel?: string;
 		onSwitch?: () => void;
+		/** one more note action, e.g. copy the day note to the whole week */
+		extraLabel?: string;
+		onExtra?: () => void;
 		onDose: (amount: number) => void;
 		onNote: (doc: NoteDoc | null) => void;
 		onClose: () => void;
@@ -38,6 +41,8 @@
 		showDose = true,
 		switchLabel,
 		onSwitch,
+		extraLabel,
+		onExtra,
 		onDose,
 		onNote,
 		onClose
@@ -169,10 +174,11 @@
 	<p class="state">{done ? `Отмечено: ${amount} ${p.unit}` : amount ? `${amount} из ${p.normDose} ${p.unit}` : `Не отмечено · ${p.unit}`}</p>
 	{/if}
 
-	{#if noteTitle || onSwitch}
+	{#if noteTitle || onSwitch || onExtra}
 		<div class="note-head">
 			<span>{noteTitle ?? 'Заметка'}</span>
 			{#if onSwitch}<button class="switch" onclick={() => { save(); onSwitch?.(); }}>{switchLabel}</button>{/if}
+			{#if onExtra}<button class="switch" onclick={() => { save(); onExtra?.(); }}>{extraLabel}</button>{/if}
 		</div>
 	{/if}
 

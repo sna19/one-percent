@@ -126,6 +126,23 @@
 		await flush();
 	}
 
+	/** Copies this day's note to the practice's other planned days of the week, today and later. */
+	async function copyToWeek(p: PracticeView, d: string) {
+		await flush(); // the note just typed must reach the server first
+		const targets = days.filter((x) => x !== d && x >= today && isPlanned(p.id, x));
+		if (!targets.length) {
+			error = 'Других запланированных дней на этой неделе нет';
+			return;
+		}
+		const withNotes = targets.filter((x) => hasNote(p.id, x)).length;
+		const ask = withNotes
+			? `Скопировать заметку на ${targets.length} дн.? В ${withNotes} из них заметка заменится. Галочки будут сняты.`
+			: `Скопировать заметку на ${targets.length} дн.? Галочки будут сняты.`;
+		if (!window.confirm(ask)) return;
+		noteFor = undefined;
+		await call({ action: 'copyNote', practiceId: p.id, date: d });
+	}
+
 	const toggle = (p: PracticeView, d: string) => {
 		if (d < today) return;
 		const on = !isPlanned(p.id, d); // decide before changing anything on screen
@@ -284,6 +301,8 @@
 			doc={noteOf(n.p.id, n.d)}
 			noteTitle="План дня"
 			showDose={false}
+			extraLabel="На все дни недели"
+			onExtra={() => copyToWeek(n.p, n.d)}
 			onDose={() => {}}
 			onNote={(doc) => saveDayNote(n.p, n.d, doc)}
 			onClose={() => (noteFor = undefined)}

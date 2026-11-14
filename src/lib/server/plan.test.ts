@@ -185,3 +185,28 @@ describe('day notes (Spec 006)', async () => {
 		expect(checklistStats(getPlan(db, '2026-11-15')!.notes['3|2026-11-16'].note)).toEqual({ total: 3, checked: 0 });
 	});
 });
+
+describe('copy a day note to the week', async () => {
+	const { copyDayNoteToWeek, setPlanNote } = await import('./plan.js');
+	const { checklistStats } = await import('../note.js');
+	const note = {
+		type: 'doc',
+		content: [{ type: 'taskList', content: [{ type: 'taskItem', attrs: { checked: true }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'завтрак' }] }] }] }]
+	};
+	it('copies to later planned days with boxes cleared; past days and other weeks untouched', () => {
+		const db = setup();
+		applySource(db, W1, W1, 'empty');
+		setPlanRow(db, W1, W1, 3, 'daily');
+		applySource(db, W2, W1, 'empty');
+		setPlanItem(db, W2, W1, 3, '2026-11-09', true);
+		setPlanNote(db, 3, '2026-11-03', note, '2026-11-01T00:00:00.000Z');
+		setPlanNote(db, 3, '2026-11-02', { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'вчера' }] }] }, '2026-11-01T00:00:00.000Z');
+		// on Wednesday the 4th: copy Tuesday's note
+		expect(copyDayNoteToWeek(db, 3, '2026-11-03', '2026-11-04')).toBe(4); // 4, 5, 6, 7
+		const n = getPlan(db, W1)!.notes;
+		expect(checklistStats(n['3|2026-11-06'].note)).toEqual({ total: 1, checked: 0 });
+		expect(checklistStats(n['3|2026-11-03'].note)).toEqual({ total: 1, checked: 1 });
+		expect(JSON.stringify(n['3|2026-11-02'].note)).toContain('вчера');
+		expect(getPlan(db, W2)!.notes['3|2026-11-09']).toBeUndefined();
+	});
+});

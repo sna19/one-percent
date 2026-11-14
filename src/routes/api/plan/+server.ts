@@ -3,6 +3,7 @@ import { getDb } from '#lib/server/db.js';
 import {
 	applySource,
 	confirmPlan,
+	copyDayNoteToWeek,
 	ensureCurrentPlan,
 	getPlan,
 	getPlanLimit,
@@ -59,6 +60,10 @@ export async function POST({ request }) {
 			case 'row':
 				if (!Number.isInteger(b.practiceId) || !['daily', 'default', 'clear'].includes(b.mode)) error(400, 'bad row');
 				setPlanRow(db, start, today, b.practiceId, b.mode);
+				break;
+			case 'copyNote':
+				if (!Number.isInteger(b.practiceId)) error(400, 'bad copy');
+				copyDayNoteToWeek(db, b.practiceId, String(b.date), today);
 				break;
 			case 'confirm':
 				confirmPlan(db, start, typeof b.templateName === 'string' ? b.templateName : undefined);

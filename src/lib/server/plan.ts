@@ -300,3 +300,39 @@ export function setPlanNote(db: Db, practiceId: number, date: DateStr, note: unk
 	});
 	return true;
 }
+
+/**
+ * Copies one day's note to the practice's other planned days of the same week, today and later,
+ * with boxes cleared (the same rule as copying a week). Past days keep their notes as history.
+ * Returns how many days got the note.
+ */
+export function copyDayNoteToWeek(db: Db, practiceId: number, date: DateStr, today: DateStr): number {
+	if (!isDateStr(date)) throw new InputError('Неверная дата');
+	const start = weekStart(date);
+	const src = db
+		.select()
+		.from(planItems)
+		.where(and(eq(planItems.practiceId, practiceId), eq(planItems.date, date)))
+		.get();
+	if (!src?.note) throw new InputError('У этого дня нет заметки');
+	const fresh = freshNote(src.note);
+	const targets = db
+		.select()
+		.from(planItems)
+		.where(and(eq(planItems.practiceId, practiceId), gte(planItems.date, today)))
+		.all()
+		.filter((it) => it.date !== date && it.date >= start && it.date <= addDays(start, 6));
+	const now = new Date().toISOString();
+	const p = db.select().from(practices).where(eq(practices.id, practiceId)).get();
+	db.transaction((tx) => {
+		for (const it of targets) {
+			tx.update(planItems).set({ note: fresh, noteUpdatedAt: now }).where(eq(planItems.id, it.id)).run();
+			// a fresh checklist on today: the mark follows the cleared boxes
+			if (p?.checklistMarks && it.date <= today) {
+				const amount = checklistAmount(JSON.parse(fresh!) as NoteDoc, p);
+				if (amount !== null) setEntry(tx as unknown as Db, practiceId, it.date, amount);
+			}
+		}
+	});
+	return targets.length;
+}
