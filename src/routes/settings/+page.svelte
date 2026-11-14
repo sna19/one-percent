@@ -10,6 +10,9 @@
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import Archive from '@lucide/svelte/icons/archive';
 	import History from '@lucide/svelte/icons/history';
+	import ChevronsDownUp from '@lucide/svelte/icons/chevrons-down-up';
+	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
+	import { onMount } from 'svelte';
 	import type { PageProps } from './$types';
 
 	/** Spec 007 C — settings as a tree: category → goal → practice; each item edits on its own screen. */
@@ -20,9 +23,45 @@
 	const tree = $derived(preview ?? base);
 	const formatName = (id: number | null) => data.formats.find((f) => f.id === id && !f.archivedAt)?.name;
 
+	// Collapsed categories and goals — remembered on this device (Spec 007 C addendum).
+	const KEY = 'settings-tree-collapsed';
 	let collapsed = $state<number[]>([]);
-	const toggleGoal = (id: number) =>
-		(collapsed = collapsed.includes(id) ? collapsed.filter((x) => x !== id) : [...collapsed, id]);
+	let collapsedCats = $state<number[]>([]);
+	onMount(() => {
+		try {
+			const v = JSON.parse(localStorage.getItem(KEY) ?? 'null');
+			if (Array.isArray(v?.goals)) collapsed = v.goals.filter(Number.isInteger);
+			if (Array.isArray(v?.cats)) collapsedCats = v.cats.filter(Number.isInteger);
+		} catch {
+			/* private mode or bad data: start expanded */
+		}
+	});
+	function remember() {
+		try {
+			localStorage.setItem(KEY, JSON.stringify({ goals: collapsed, cats: collapsedCats }));
+		} catch {
+			/* not critical */
+		}
+	}
+	const flip = (list: number[], id: number) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
+	function toggleGoal(id: number) {
+		collapsed = flip(collapsed, id);
+		remember();
+	}
+	function toggleCat(id: number) {
+		collapsedCats = flip(collapsedCats, id);
+		remember();
+	}
+	function collapseAll() {
+		collapsedCats = base.map((c) => c.id);
+		collapsed = base.flatMap((c) => c.goals.map((g) => g.id));
+		remember();
+	}
+	function expandAll() {
+		collapsedCats = [];
+		collapsed = [];
+		remember();
+	}
 
 	let error = $state<string | undefined>();
 	let addOpen = $state(false);
@@ -141,6 +180,8 @@
 		title="Настройки"
 		back={backFrom(page.url.searchParams)}
 		menu={[
+			{ label: 'Свернуть всё', icon: ChevronsDownUp, onclick: collapseAll },
+			{ label: 'Развернуть всё', icon: ChevronsUpDown, onclick: expandAll },
 			{ label: 'Архив', icon: Archive, href: '/settings/archive' },
 			{ label: 'Старые настройки', icon: History, href: '/settings/legacy' }
 		]}
@@ -166,8 +207,16 @@
 
 	<div class="tree" bind:this={treeEl} class:sorting={!!dragging}>
 		{#each tree as c (c.id)}
+			{@const catOpen = !collapsedCats.includes(c.id)}
 			<section>
-				<h2 data-row="category" data-cat={c.id}><span class="dot" style="--c:{colorOf(c.color).light}"></span>{c.name}</h2>
+				<h2 data-row="category" data-cat={c.id}>
+					<button class="cat-toggle" aria-expanded={catOpen} aria-label="{c.name}: {catOpen ? 'свернуть' : 'развернуть'}" onclick={() => toggleCat(c.id)}>
+						<span class="chev" class:open={catOpen}><ChevronRight size={16} /></span>
+						<span class="dot" style="--c:{colorOf(c.color).light}"></span>{c.name}
+						{#if !catOpen}<span class="count">{c.goals.length}</span>{/if}
+					</button>
+				</h2>
+				{#if catOpen}
 				<ul class="goals">
 					{#each c.goals as g (g.id)}
 						{@const open = !collapsed.includes(g.id)}
@@ -196,6 +245,7 @@
 					{/each}
 					<li class="add"><button onclick={() => newGoal(c.id)}><Plus size={16} /> Цель</button></li>
 				</ul>
+				{/if}
 			</section>
 		{/each}
 	</div>
@@ -226,6 +276,31 @@
 		letter-spacing: 0.04em;
 		color: var(--muted);
 		margin: 22px 0 8px;
+	}
+	.cat-toggle {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		width: 100%;
+		min-height: 44px;
+		margin: -6px 0;
+		padding: 0;
+		border: none;
+		background: none;
+		font: inherit;
+		color: inherit;
+		text-transform: inherit;
+		letter-spacing: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.cat-toggle .chev {
+		width: auto;
+		height: auto;
+	}
+	.cat-toggle .count {
+		margin-left: auto;
+		text-transform: none;
 	}
 	.dot {
 		width: 12px;
