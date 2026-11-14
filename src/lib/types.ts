@@ -19,6 +19,8 @@ export interface PracticeView {
 	/** Spec 006 flags */
 	showNoteFull: boolean;
 	checklistMarks: boolean;
+	/** task 12: first in «Сделать что-то ещё» */
+	recommended: boolean;
 	/** Usual weekdays for planning, 0 (Sun) … 6 (Sat). */
 	defaultDays: number[];
 	createdOn: DateStr;

@@ -11,7 +11,8 @@ import {
 	savePlanLimit,
 	savePractice,
 	saveTemplate,
-	setArchived
+	setArchived,
+	setRecommended
 } from '#lib/server/settings.js';
 
 /**
@@ -27,7 +28,8 @@ const actions: Record<string, (f: FormData) => void> = {
 	template: (f) => saveTemplate(getDb(), f),
 	limit: (f) => savePlanLimit(getDb(), f),
 	archive: (f) => setArchived(getDb(), f, true),
-	restore: (f) => setArchived(getDb(), f, false)
+	restore: (f) => setArchived(getDb(), f, false),
+	recommend: (f) => setRecommended(getDb(), f)
 };
 
 export async function POST({ params, request }) {

@@ -30,6 +30,7 @@
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
+	import Star from '@lucide/svelte/icons/star';
 	import NoteView from '#lib/NoteView.svelte';
 	import { checklistAmount, checklistStats, firstLine, firstLineParts, toggleTask, type NoteDoc } from '#lib/note.js';
 	import type { PracticeView, WeekData } from '#lib/types.js';
@@ -169,6 +170,33 @@
 		}
 	}
 	let moreOpen = $state(false);
+
+	/** «3 рекомендовано · 15», or just «15» */
+	function otherCount(other: PracticeView[]) {
+		const rec = other.filter((x) => x.recommended).length;
+		return rec ? `${rec} рекомендовано · ${other.length}` : String(other.length);
+	}
+
+	// task 12: the «Рекомендовать» star — shown at once, saved on the server; back on failure
+	async function toggleRecommended(p: PracticeView) {
+		const on = !p.recommended;
+		const set = (v: boolean) => {
+			const x = week?.practices.find((q) => q.id === p.id);
+			if (x) x.recommended = v;
+		};
+		set(on);
+		try {
+			const r = await fetch('/api/settings/recommend', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ id: p.id, on })
+			});
+			if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message ?? 'Не сохранилось');
+		} catch (e) {
+			set(!on);
+			problem = (e as Error).message;
+		}
+	}
 
 	// «Порядок» (#9): drag cards by their ≡ handle; the order is the practices' order everywhere.
 	type ListName = 'todo' | 'done' | 'other';
@@ -685,7 +713,7 @@
 		</details>
 	{:else if day.other.length}
 		<details class="more" open={moreOpen || !day.planned} ontoggle={(e) => (moreOpen = (e.currentTarget as HTMLDetailsElement).open)}>
-			<summary>Сделать что-то ещё <span class="count">{day.other.length}</span></summary>
+			<summary>Сделать что-то ещё <span class="count">{otherCount(day.other)}</span></summary>
 			<ul class="cards" class:reorder bind:this={listEls.other}>
 				{#each inOrder('other', day.other, (p) => p.id) as p (p.id)}
 					<li data-id={p.id} class:dragging={drag?.id === p.id} in:receive={{ key: p.id }} out:send={{ key: p.id }} animate:flip={{ duration: 180 }}>
@@ -716,6 +744,7 @@
 		<div
 			class="card"
 			class:nobox={auto}
+			class:has-star={list === 'other'}
 			class:open={isOpen}
 			data-depth={dep}
 			style={cellStyle(p.color)}
@@ -747,6 +776,7 @@
 				<span class="ctitle">{p.title}{#if bonus}<span class="tag">бонус</span>{/if}</span>
 				{#if p.goalTitle !== p.title}<small>{p.goalTitle}</small>{/if}
 			</button>
+			{#if list === 'other'}{@render star(p)}{/if}
 			<span class="dose" class:count={auto}
 				>{auto ? `${st.checked} из ${st.total}` : a && !counts(a, p) ? `${a} из ${p.normDose} ${p.unit}` : a ? `${a} ${p.unit}` : doseHint(p)}</span
 			>
@@ -787,6 +817,7 @@
 						</div>
 					{/if}
 					<div class="links">
+						{@render star(p)}
 						<button onclick={() => openSheet(p, viewDay, 'practice')}>Изменить заметку</button>
 						{#if planned}<button onclick={() => openSheet(p, viewDay, 'day')}>Изменить заметку дня</button>{/if}
 					</div>
@@ -795,6 +826,20 @@
 		</div>
 		{@render sideButton(p, list, ids, `${p.title}: ${planned ? 'план дня и заметка' : 'доза и заметка'}`, () => openSheet(p, viewDay))}
 	</div>
+{/snippet}
+
+{#snippet star(p: PracticeView)}
+	<button
+		class="star"
+		class:on={p.recommended}
+		aria-pressed={p.recommended}
+		aria-label="{p.title}: {p.recommended ? 'не рекомендовать' : 'рекомендовать'}"
+		title={p.recommended ? 'Рекомендовано' : 'Рекомендовать'}
+		onclick={(e) => {
+			e.stopPropagation();
+			toggleRecommended(p);
+		}}><Star size={20} fill={p.recommended ? 'currentColor' : 'none'} /></button
+	>
 {/snippet}
 
 {#snippet sideButton(p: PracticeView, list: ListName, ids: number[], label: string, open: () => void)}
@@ -1386,6 +1431,30 @@
 	}
 	.cline.cnote {
 		display: block;
+	}
+	/* task 12: the star, a 44 pt target */
+	.card.has-star {
+		grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 32%);
+	}
+	.star {
+		width: 44px;
+		height: 44px;
+		margin: -10px -6px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+		border-radius: 10px;
+		background: none;
+		color: var(--muted);
+		cursor: pointer;
+	}
+	.star.on {
+		color: #e0a400;
+	}
+	.links .star {
+		margin: 0;
+		border: 1px solid color-mix(in oklab, var(--fg) 30%, transparent);
 	}
 	.more-btn {
 		display: inline-flex;

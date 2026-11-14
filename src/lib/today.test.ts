@@ -17,6 +17,7 @@ const P = (o: Partial<PracticeView> & { id: number; goalId: number }): PracticeV
 	noteUpdatedAt: null,
 	showNoteFull: false,
 	checklistMarks: false,
+	recommended: false,
 	createdOn: '2026-11-01',
 	lastDone: null,
 	...o
@@ -52,6 +53,22 @@ describe('todayLists', () => {
 	it('no top when the plan for today is done', () => {
 		const all: Record<string, number> = { ...marks, [`2|${T}`]: 15, [`3|${T}`]: 15 };
 		expect(todayLists(practices, T, isPlanned, (id, d) => all[`${id}|${d}`]).top).toBeUndefined();
+	});
+});
+
+describe('recommended (task 12)', () => {
+	it('come first in «other», each group in the common order; planned ones are not repeated', () => {
+		const ps = [
+			P({ id: 1, goalId: 1, recommended: true }), // planned: stays in to do
+			P({ id: 2, goalId: 2 }),
+			P({ id: 3, goalId: 3, recommended: true }),
+			P({ id: 4, goalId: 4 }),
+			P({ id: 5, goalId: 5, recommended: true })
+		];
+		const l = todayLists(ps, T, (id) => id === 1, () => undefined);
+		expect(l.todo.map((p) => p.id)).toEqual([1]);
+		expect(l.other.map((p) => p.id)).toEqual([3, 5, 2, 4]);
+		expect(l.planned).toBe(1);
 	});
 });
 

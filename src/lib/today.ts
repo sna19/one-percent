@@ -9,7 +9,7 @@ export interface TodayLists {
 	todo: PracticeView[];
 	/** done today (≥ min), planned or bonus */
 	done: { p: PracticeView; bonus: boolean }[];
-	/** everything else that is active: tapping one is a bonus */
+	/** everything else that is active: tapping one is a bonus; recommended ones first (task 12) */
 	other: PracticeView[];
 	/** «по плану X из Y» for today, in practices */
 	plannedDone: number;
@@ -36,6 +36,8 @@ export function todayLists(
 		else if (plan) todo.push(p);
 		else other.push(p);
 	}
+	// task 12: recommended first, each group in the common order (a stable sort keeps it)
+	other.sort((a, b) => Number(!!b.recommended) - Number(!!a.recommended));
 	const plannedDone = done.filter((d) => !d.bonus).length;
 	const top = priority(
 		groupPractices(todo, 'goal').map((g, i) => ({

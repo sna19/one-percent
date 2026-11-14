@@ -17,6 +17,7 @@ const P = (o: Partial<PracticeView> & { id: number; goalId: number }): PracticeV
 	noteUpdatedAt: null,
 	showNoteFull: false,
 	checklistMarks: false,
+	recommended: false,
 	createdOn: '2026-11-01',
 	lastDone: null,
 	...o

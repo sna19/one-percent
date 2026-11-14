@@ -62,6 +62,8 @@ export const practices = sqliteTable('practices', {
 	showNoteFull: integer('show_note_full', { mode: 'boolean' }).notNull().default(false),
 	/** Spec 006: the day's depth comes from the day note's checklist. */
 	checklistMarks: integer('checklist_marks', { mode: 'boolean' }).notNull().default(false),
+	/** Task 12: shown first in «Сделать что-то ещё»; does not plan it and does not count for the day. */
+	recommended: integer('recommended', { mode: 'boolean' }).notNull().default(false),
 	archivedAt: text('archived_at'),
 	createdAt: createdAt()
 });

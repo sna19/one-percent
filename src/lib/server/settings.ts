@@ -79,6 +79,7 @@ export function savePractice(db: Db, f: FormData) {
 		defaultDays: days(f),
 		showNoteFull: f.get('showNoteFull') === 'on',
 		checklistMarks: f.get('checklistMarks') === 'on',
+		recommended: f.get('recommended') === 'on',
 		unit: str(f, 'unit'),
 		minDose: num(f, 'minDose'),
 		normDose: num(f, 'normDose')
@@ -90,6 +91,13 @@ export function savePractice(db: Db, f: FormData) {
 		const [{ m }] = db.select({ m: max(practices.sortOrder) }).from(practices).all();
 		db.insert(practices).values({ ...values, sortOrder: (m ?? -1) + 1 }).run();
 	}
+}
+
+/** Task 12: the «Рекомендовать» star, set from any screen. */
+export function setRecommended(db: Db, f: FormData) {
+	const pid = need(id(f), 'практику');
+	const r = db.update(practices).set({ recommended: f.get('on') === 'on' }).where(eq(practices.id, pid)).run();
+	if (!r.changes) throw new InputError('Практика не найдена');
 }
 
 export function saveFormat(db: Db, f: FormData) {

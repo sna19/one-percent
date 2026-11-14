@@ -24,6 +24,7 @@
 	let days = $state<number[]>(parseDays(p0.defaultDays));
 	let showNoteFull = $state(p0.showNoteFull);
 	let checklistMarks = $state(p0.checklistMarks);
+	let recommended = $state(p0.recommended);
 	let note = $state<NoteDoc | null>(p0.note ? JSON.parse(p0.note) : null);
 	let editing = $state(false);
 
@@ -39,7 +40,8 @@
 			normDose,
 			defaultDays: days,
 			showNoteFull,
-			checklistMarks
+			checklistMarks,
+			recommended
 		});
 	}
 	onDestroy(() => saver.flush());
@@ -113,6 +115,11 @@
 				<button class="wd" class:on={days.includes(d)} aria-pressed={days.includes(d)} onclick={() => toggleDay(d)}>{NAMES[d]}</button>
 			{/each}
 		</div>
+	</div>
+
+	<h2>«Сделать что-то ещё»</h2>
+	<div class="card">
+		<label class="toggle"><input type="checkbox" bind:checked={recommended} onchange={changed} /> Рекомендовать — показывать первой, даже когда не в плане</label>
 	</div>
 
 	<h2>План дня</h2>

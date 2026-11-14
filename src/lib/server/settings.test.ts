@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { openDb } from './db.js';
 import { seedIfEmpty } from './seed.js';
-import { InputError, loadSettings, moveItem, saveFormat, savePlanLimit, savePractice, setArchived, setPracticeOrder, setOrder } from './settings.js';
+import { InputError, loadSettings, moveItem, saveFormat, savePlanLimit, savePractice, setArchived, setPracticeOrder, setOrder, setRecommended } from './settings.js';
+import { practices } from './schema.js';
+import { eq } from 'drizzle-orm';
 import { loadWeek } from './week.js';
 
 const form = (o: Record<string, string | number>) => {
@@ -143,5 +145,19 @@ describe('settings tree', async () => {
 		applyTreeDrop(db, { goalCategory: { id: 1, categoryId: 2 } });
 		expect(loadSettings(db).goals.find((g) => g.id === 1)?.categoryId).toBe(2);
 		expect(() => createPractice(db, 99)).toThrow(InputError);
+	});
+});
+
+describe('setRecommended (task 12)', () => {
+	it('turns the star on and off; unknown practice is an error', () => {
+		const { db } = openDb(':memory:');
+		seedIfEmpty(db);
+		const get = () => db.select().from(practices).where(eq(practices.id, 1)).get()!.recommended;
+		expect(get()).toBe(false);
+		setRecommended(db, form({ id: 1, on: 'on' }));
+		expect(get()).toBe(true);
+		setRecommended(db, form({ id: 1 }));
+		expect(get()).toBe(false);
+		expect(() => setRecommended(db, form({ id: 999, on: 'on' }))).toThrow(InputError);
 	});
 });

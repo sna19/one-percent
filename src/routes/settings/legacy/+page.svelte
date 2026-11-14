@@ -280,6 +280,9 @@
 			{/each}
 		</div>
 	</fieldset>
+	<label class="toggle"
+		><input type="checkbox" name="recommended" checked={p?.recommended ?? false} /> Рекомендовать (первой в «Сделать что-то ещё»)</label
+	>
 	<fieldset>
 		<legend>План дня</legend>
 		<label class="toggle"

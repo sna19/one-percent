@@ -1,0 +1,1 @@
+ALTER TABLE `practices` ADD `recommended` integer DEFAULT false NOT NULL;
