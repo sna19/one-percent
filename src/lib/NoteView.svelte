@@ -7,12 +7,14 @@
 	 */
 	interface Props {
 		doc: NoteDoc;
-		onToggle: (index: number) => void;
-		onOpen: () => void;
+		onToggle?: (index: number) => void;
+		onOpen?: () => void;
 		/** boxes cannot be ticked (a day that has not come yet) */
 		readonly?: boolean;
+		/** task 13: a look at the note on a collapsed card — nothing to tap but links; taps go to the card */
+		preview?: boolean;
 	}
-	let { doc, onToggle, onOpen, readonly = false }: Props = $props();
+	let { doc, onToggle, onOpen, readonly = false, preview = false }: Props = $props();
 
 	// document-order index of each checklist item, for onToggle
 	const taskIndex = $derived.by(() => {
@@ -31,11 +33,19 @@
 </script>
 
 <!-- the text area opens the editor; boxes stop the tap from reaching it -->
-<div class="note-view" role="button" tabindex="0" onclick={onOpen} onkeydown={(e) => e.key === 'Enter' && onOpen()}>
-	{#each doc.content ?? [] as n, i (i)}
-		{@render block(n)}
-	{/each}
-</div>
+{#if preview}
+	<div class="note-view preview">
+		{#each doc.content ?? [] as n, i (i)}
+			{@render block(n)}
+		{/each}
+	</div>
+{:else}
+	<div class="note-view" role="button" tabindex="0" onclick={() => onOpen?.()} onkeydown={(e) => e.key === 'Enter' && onOpen?.()}>
+		{#each doc.content ?? [] as n, i (i)}
+			{@render block(n)}
+		{/each}
+	</div>
+{/if}
 
 {#snippet block(n: NoteNode)}
 	{#if n.type === 'paragraph'}
@@ -51,6 +61,11 @@
 			{#each n.content ?? [] as li, i (i)}
 				{@const done = !!li.attrs?.checked}
 				<li class:done>
+					{#if preview}
+						<span class="tick" class:on={done} aria-hidden="true"
+							>{#if done}<svg viewBox="0 0 12 12"><path d="M2.5 6.2 5 8.6 9.6 3.4" /></svg>{/if}</span
+						>
+					{:else}
 					<button
 						class="tick"
 						class:on={done}
@@ -62,9 +77,10 @@
 							.join(' ')}"
 						onclick={(e) => {
 							e.stopPropagation();
-							onToggle(taskIndex.get(li) ?? -1);
+							onToggle?.(taskIndex.get(li) ?? -1);
 						}}
 					>{#if done}<svg viewBox="0 0 12 12"><path d="M2.5 6.2 5 8.6 9.6 3.4" /></svg>{/if}</button>
+					{/if}
 					<div>{#each li.content ?? [] as c, j (j)}{@render block(c)}{/each}</div>
 				</li>
 			{/each}
@@ -149,6 +165,27 @@
 		content: '';
 		position: absolute;
 		inset: -10px;
+	}
+	.preview {
+		cursor: inherit;
+	}
+	.preview .tick {
+		width: 16px;
+		height: 16px;
+		margin-top: 1px;
+		border-width: 1.5px;
+		border-radius: 4px;
+		cursor: inherit;
+	}
+	.preview .tick::before {
+		content: none;
+	}
+	.preview .tick svg {
+		width: 11px;
+		height: 11px;
+	}
+	.preview p {
+		margin: 0;
 	}
 	.tick:disabled {
 		opacity: 0.45;

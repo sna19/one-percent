@@ -39,37 +39,29 @@ export function firstLine(doc: NoteDoc | null | undefined): string {
 }
 
 /**
- * Task 11: the same first line as `firstLine`, in pieces, so links on a collapsed card stay tappable.
- * Each piece is plain text or a link with a safe address; spaces are collapsed like in `firstLine`.
+ * Task 13: the first non-empty block of a note — what comes before the first Enter: a paragraph, a
+ * list item or a checklist item — as a small doc of its own, formatting kept, nothing after it
+ * (not even a list nested under that item). null when the note is empty.
  */
-export function firstLineParts(doc: NoteDoc | null | undefined): { text: string; href: string | null }[] {
-	const find = (nodes: NoteNode[] | undefined): NoteNode | null => {
+export function firstBlockDoc(doc: NoteDoc | null | undefined): NoteDoc | null {
+	const find = (nodes: NoteNode[] | undefined, wrap: (b: NoteNode) => NoteNode): NoteNode | null => {
 		for (const n of nodes ?? []) {
 			if (BLOCKS.has(n.type)) {
-				if (textOf(n).trim()) return n;
+				if (textOf(n).trim()) return wrap(n);
+			} else if (n.type === 'bulletList' || n.type === 'taskList') {
+				for (const item of n.content ?? []) {
+					const one = (b: NoteNode) => wrap({ type: n.type, content: [{ ...item, content: [b] }] });
+					const f = find(item.content, one);
+					if (f) return f;
+				}
 			} else {
-				const f = find(n.content);
+				const f = find(n.content, wrap);
 				if (f) return f;
 			}
 		}
 		return null;
 	};
-	const block = doc ? find(doc.content) : null;
-	if (!block) return [];
-	const parts: { text: string; href: string | null }[] = [];
-	for (const n of block.content ?? []) {
-		const text = textOf(n);
-		const href = safeHref(n.marks?.find((m) => m.type === 'link')?.attrs?.href);
-		const last = parts.at(-1);
-		if (last && last.href === href) last.text += text;
-		else parts.push({ text, href });
-	}
-	for (const p of parts) p.text = p.text.replace(/\s+/g, ' ');
-	if (parts.length) {
-		parts[0].text = parts[0].text.trimStart();
-		parts[parts.length - 1].text = parts[parts.length - 1].text.trimEnd();
-	}
-	return parts.filter((p) => p.text);
+	return doc ? (find(doc.content, (b) => ({ type: 'doc', content: [b] })) as NoteDoc | null) : null;
 }
 
 export function isEmptyNote(doc: NoteDoc | null | undefined): boolean {

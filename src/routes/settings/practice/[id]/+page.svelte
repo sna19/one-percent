@@ -141,7 +141,7 @@
 		dateLabel="общая заметка"
 		amount={undefined}
 		doc={note}
-		noteTitle="Постоянная заметка"
+		head={{ kind: 'practice' }}
 		showDose={false}
 		onDose={() => {}}
 		onNote={(doc) => saveNote(doc)}

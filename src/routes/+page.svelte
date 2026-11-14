@@ -31,8 +31,11 @@
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Star from '@lucide/svelte/icons/star';
+	import FilePen from '@lucide/svelte/icons/file-pen';
+	import NoteHead from '#lib/NoteHead.svelte';
+	import DayIcon from '#lib/DayIcon.svelte';
 	import NoteView from '#lib/NoteView.svelte';
-	import { checklistAmount, checklistStats, firstLine, firstLineParts, toggleTask, type NoteDoc } from '#lib/note.js';
+	import { checklistAmount, checklistStats, firstBlockDoc, firstLine, toggleTask, type NoteDoc } from '#lib/note.js';
 	import type { PracticeView, WeekData } from '#lib/types.js';
 
 	const DAY_NAMES = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
@@ -170,6 +173,8 @@
 		}
 	}
 	let moreOpen = $state(false);
+	/** task 13: the card whose «±» quantity field is open */
+	let qtyOpen = $state<number | undefined>();
 
 	/** «3 рекомендовано · 15», or just «15» */
 	function otherCount(other: PracticeView[]) {
@@ -654,9 +659,9 @@
 			dateLabel={sd === today ? 'сегодня' : label(sd)}
 			amount={amountOf(sp.id, sd)}
 			doc={dayMode ? dayNoteOf(sp.id, sd) : sp.note}
-			noteTitle={dayMode ? 'План дня' : planned ? 'Общая заметка практики' : undefined}
+			head={dayMode ? { kind: 'day', label: dayTitle(sd), day: Number(sd.slice(8)) } : { kind: 'practice' }}
 			showDose={!byChecklist(sp, sd) && sd <= today}
-			switchLabel={dayMode ? 'Общая заметка практики' : planned ? 'План дня' : undefined}
+			switchLabel={dayMode ? 'Всегда' : planned ? dayTitle(sd) : undefined}
 			onSwitch={planned ? () => (sheet = { pid: sp.id, date: sd, mode: dayMode ? 'practice' : 'day' }) : undefined}
 			extraLabel={planned && sd > today ? 'Убрать из плана дня' : undefined}
 			onExtra={planned && sd > today ? () => setPlanned(sp, false) : undefined}
@@ -735,7 +740,7 @@
 	{@const st = checklistStats(dayNote)}
 	{@const isOpen = expanded === p.id}
 	{@const showDay = !!dayNote && (p.showNoteFull || isOpen)}
-	{@const line = showDay || isOpen ? [] : firstLine(dayNote) ? firstLineParts(dayNote) : firstLineParts(p.note)}
+	{@const first = showDay || isOpen ? null : firstLine(dayNote) ? firstBlockDoc(dayNote) : firstBlockDoc(p.note)}
 	<div class="card-wrap" data-depth={dep}>
 		<!-- Spec 007 F: the box is the only mark; a tap anywhere else opens the card in place.
 		     Keyboard and screen readers use the header button (.chead); the click on the whole card
@@ -780,46 +785,72 @@
 			<span class="dose" class:count={auto}
 				>{auto ? `${st.checked} из ${st.total}` : a && !counts(a, p) ? `${a} из ${p.normDose} ${p.unit}` : a ? `${a} ${p.unit}` : doseHint(p)}</span
 			>
-			{#if line.length}<span class="cnote cline"
-					>→ {#each line as part, i (i)}{#if part.href}<a
-								href={part.href}
-								target="_blank"
-								rel="noopener noreferrer"
-								onclick={(e) => e.stopPropagation()}>{part.text}</a
-							>{:else}{part.text}{/if}{/each}</span
-				>{/if}
+			{#if first}
+				<!-- task 13: the note's first block, whole and formatted; links work, the rest of a tap opens the card -->
+				<div class="cnote cline"><NoteView doc={first} preview /></div>
+			{/if}
 			{#if showDay && dayNote}
 				<div class="cnote">
-					<span class="plan-title">План дня</span>
+					<NoteHead kind="day" label={dayTitle(viewDay)} day={Number(viewDay.slice(8))} />
 					<NoteView doc={dayNote} readonly={isFutureDay} onToggle={(i) => saveDayNote(p, viewDay, toggleTask(dayNote, i))} onOpen={() => {}} />
 				</div>
 			{/if}
 			{#if isOpen}
 				<div class="cnote cexpand" role="presentation" onclick={(e) => e.stopPropagation()}>
 					{#if p.note}
-						<span class="plan-title">Заметка практики</span>
+						<NoteHead kind="practice" />
 						<NoteView doc={p.note} onToggle={(i) => saveNote(p, toggleTask(p.note!, i))} onOpen={() => toggleCard(p.id)} />
 					{/if}
 					{#if !auto && !isFutureDay}
 						<div class="dose-row">
-							<button onclick={() => mark(p, viewDay, p.minDose)}>Минимум · {p.minDose}</button>
+							<button onclick={() => mark(p, viewDay, p.minDose)}>Мин · {p.minDose}</button>
 							<button onclick={() => mark(p, viewDay, p.normDose)}>Норма · {p.normDose}</button>
+						</div>
+						{#if qtyOpen === p.id}
 							<form
+								class="qty"
 								onsubmit={(e) => {
 									e.preventDefault();
 									const v = Number(String(new FormData(e.currentTarget).get('q') ?? '').replace(',', '.'));
-									if (Number.isFinite(v) && v >= 0) mark(p, viewDay, v);
+									if (Number.isFinite(v) && v >= 0) {
+										mark(p, viewDay, v);
+										qtyOpen = undefined;
+									}
 								}}
 							>
-								<input name="q" inputmode="decimal" placeholder="Количество, {p.unit}" aria-label="Количество, {p.unit}" value={a ?? ''} />
+								<!-- svelte-ignore a11y_autofocus -->
+								<input name="q" inputmode="decimal" placeholder="Количество, {p.unit}" aria-label="Количество, {p.unit}" value={a ?? ''} autofocus />
 								<button type="submit" aria-label="Записать количество">✓</button>
 							</form>
-						</div>
+						{/if}
 					{/if}
-					<div class="links">
+					<!-- task 13: one row of icons; new actions are added here as more buttons -->
+					<div class="actions" role="toolbar" aria-label="{p.title}: действия">
+						<button
+							class:dim={!p.note}
+							aria-label="Заметка «Всегда»: {p.note ? 'изменить' : 'создать'}"
+							title="Заметка «Всегда»"
+							onclick={() => openSheet(p, viewDay, 'practice')}><FilePen size={22} /></button
+						>
+						{#if planned}
+							<button
+								class:dim={!dayNote}
+								aria-label="Заметка дня, {dayTitle(viewDay)}: {dayNote ? 'изменить' : 'создать'}"
+								title="Заметка дня, {dayTitle(viewDay)}"
+								onclick={() => openSheet(p, viewDay, 'day')}><DayIcon day={Number(viewDay.slice(8))} /></button
+							>
+						{/if}
 						{@render star(p)}
-						<button onclick={() => openSheet(p, viewDay, 'practice')}>Изменить заметку</button>
-						{#if planned}<button onclick={() => openSheet(p, viewDay, 'day')}>Изменить заметку дня</button>{/if}
+						{#if !auto && !isFutureDay}
+							<button
+								class="qty-btn"
+								class:on={qtyOpen === p.id}
+								aria-label="Своё количество, {p.unit}"
+								aria-expanded={qtyOpen === p.id}
+								title="Своё количество"
+								onclick={() => (qtyOpen = qtyOpen === p.id ? undefined : p.id)}>±</button
+							>
+						{/if}
 					</div>
 				</div>
 			{/if}
@@ -1357,21 +1388,16 @@
 		gap: 10px;
 		cursor: default;
 	}
+	/* task 13: minimum and norm stay as short chips; «±» opens the quantity field */
 	.dose-row {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		display: flex;
 		gap: 8px;
 	}
-	.dose-row form {
-		grid-column: 1 / -1;
-		display: flex;
-		gap: 6px;
-	}
 	.dose-row button,
-	.dose-row input,
-	.links button {
+	.qty input,
+	.qty button {
 		min-height: 44px;
-		border-radius: 10px;
+		border-radius: 22px;
 		border: 1px solid color-mix(in oklab, var(--fg) 30%, transparent);
 		background: color-mix(in oklab, var(--surface) 70%, transparent);
 		color: var(--text);
@@ -1379,25 +1405,55 @@
 		font-size: 15px;
 		cursor: pointer;
 	}
-	.dose-row input {
+	.dose-row button {
+		padding: 0 16px;
+	}
+	.qty {
+		display: flex;
+		gap: 6px;
+	}
+	.qty input {
 		flex: 1;
 		min-width: 0;
+		border-radius: 10px;
 		padding: 0 10px;
 		font-size: 17px;
 		cursor: text;
 	}
-	.dose-row form button {
+	.qty button {
 		width: 48px;
+		border-radius: 10px;
 	}
-	.links {
+	/* task 13: the icon row, 44 pt targets; a note that does not exist yet is dimmed */
+	.actions {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 8px;
+		gap: 4px;
+		margin: 0 -6px -4px;
 	}
-	.links button {
-		padding: 0 12px;
+	.actions button {
+		width: 44px;
+		height: 44px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		border: none;
+		border-radius: 10px;
 		background: none;
 		color: var(--fg);
+		font: inherit;
+		cursor: pointer;
+	}
+	.actions button.dim {
+		opacity: 0.4;
+	}
+	.actions .qty-btn {
+		font-size: 22px;
+		font-weight: 600;
+	}
+	.actions .qty-btn.on {
+		background: color-mix(in oklab, var(--fg) 14%, transparent);
 	}
 	.box-btn {
 		padding: 0;
@@ -1405,14 +1461,6 @@
 		cursor: pointer;
 		color: var(--fg);
 		margin-top: 2px;
-	}
-	.plan-title {
-		margin-top: 6px;
-		font-size: 11px;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		opacity: 0.75;
 	}
 	.card .dose {
 		margin-right: 34px;
@@ -1452,9 +1500,11 @@
 	.star.on {
 		color: #e0a400;
 	}
-	.links .star {
+	.actions .star {
 		margin: 0;
-		border: 1px solid color-mix(in oklab, var(--fg) 30%, transparent);
+	}
+	.actions .star:not(.on) {
+		color: var(--fg);
 	}
 	.more-btn {
 		display: inline-flex;
@@ -1490,13 +1540,18 @@
 		text-decoration-thickness: 2px;
 		font-weight: 600;
 	}
+	/* task 13: the first block wraps to the card's width, nothing is cut */
 	.cline {
-		font-size: 13px;
 		opacity: 0.9;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
 		margin-top: 2px;
+		overflow-wrap: anywhere;
+	}
+	.cline :global(.note-view) {
+		font-size: 13px;
+		line-height: 1.35;
+	}
+	.cline :global(ul) {
+		margin: 0;
 	}
 	button.pname {
 		background: none;

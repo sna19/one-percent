@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { firstLine, firstLineParts, isNoteDoc, safeHref, sanitizeLinks, type NoteDoc } from './note.js';
+import { firstLine, firstBlockDoc, isNoteDoc, safeHref, sanitizeLinks, type NoteDoc } from './note.js';
 
 const doc = (...content: object[]) => ({ type: 'doc', content }) as NoteDoc;
 const p = (...t: string[]) => ({ type: 'paragraph', content: t.map((text) => ({ type: 'text', text })) });
@@ -91,26 +91,34 @@ describe('sanitizeLinks', () => {
 	});
 });
 
-describe('firstLineParts', () => {
-	it('splits the first line into text and links', () => {
-		const d = doc(
-			{ type: 'paragraph' },
-			{
-				type: 'paragraph',
-				content: [
-					{ type: 'text', text: '  Читать ' },
-					{ type: 'text', text: 'учебник', marks: [{ type: 'link', attrs: { href: 'https://a.example' } }] },
-					{ type: 'text', text: ' и ', marks: [{ type: 'bold' }] },
-					{ type: 'text', text: 'плохо', marks: [{ type: 'link', attrs: { href: 'javascript:1' } }] }
-				]
-			}
-		);
-		expect(firstLineParts(d)).toEqual([
-			{ text: 'Читать ', href: null },
-			{ text: 'учебник', href: 'https://a.example' },
-			{ text: ' и плохо', href: null }
-		]);
-		expect(firstLineParts(d).map((x) => x.text).join('')).toBe(firstLine(d));
-		expect(firstLineParts(null)).toEqual([]);
+describe('firstBlockDoc', () => {
+	const t = (text: string, marks?: object[]) => ({ type: 'text', text, ...(marks ? { marks } : {}) });
+	it('the first non-empty paragraph, whole and with its formatting', () => {
+		const d = doc({ type: 'paragraph' }, { type: 'paragraph', content: [t('Первый '), t('жирный', [{ type: 'bold' }])] }, p('второй'));
+		expect(firstBlockDoc(d)).toEqual({
+			type: 'doc',
+			content: [{ type: 'paragraph', content: [t('Первый '), t('жирный', [{ type: 'bold' }])] }]
+		});
+	});
+	it('a checklist item keeps its box state and drops what follows, nested lists too', () => {
+		const item = (text: string, checked: boolean, nested?: object) => ({
+			type: 'taskItem',
+			attrs: { checked },
+			content: [p(text), ...(nested ? [nested] : [])]
+		});
+		const d = doc({
+			type: 'taskList',
+			content: [item('Купить', true, { type: 'bulletList', content: [{ type: 'listItem', content: [p('хлеб')] }] }), item('Позвонить', false)]
+		});
+		expect(firstBlockDoc(d)).toEqual({
+			type: 'doc',
+			content: [{ type: 'taskList', content: [{ type: 'taskItem', attrs: { checked: true }, content: [p('Купить')] }] }]
+		});
+	});
+	it('a bullet item; empty note → null', () => {
+		const d = doc({ type: 'bulletList', content: [{ type: 'listItem', content: [p(' '), p('пункт')] }] });
+		expect(firstBlockDoc(d)?.content?.[0]).toEqual({ type: 'bulletList', content: [{ type: 'listItem', content: [p('пункт')] }] });
+		expect(firstBlockDoc(doc({ type: 'paragraph' }))).toBeNull();
+		expect(firstBlockDoc(null)).toBeNull();
 	});
 });

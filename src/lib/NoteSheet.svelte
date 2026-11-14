@@ -8,6 +8,7 @@
 	import { safeHref, type NoteDoc } from './note.js';
 	import type { PracticeView } from './types.js';
 	import { colorOf } from './palette.js';
+	import NoteHead from './NoteHead.svelte';
 
 	/**
 	 * Spec 005 — the practice sheet: dose for the day on top, the standing note below.
@@ -21,6 +22,8 @@
 		doc: NoteDoc | null;
 		/** shown above the editor, e.g. «План дня» */
 		noteTitle?: string;
+		/** task 13: the note's heading with its icon («Всегда» / «Ср, 18 ноября»), as on the card */
+		head?: { kind: 'practice' | 'day'; label?: string; day?: number };
 		/** dose row; hidden for a practice marked by its checklist, and in the planner */
 		showDose?: boolean;
 		/** switch between the day note and the practice note */
@@ -39,6 +42,7 @@
 		amount,
 		doc,
 		noteTitle,
+		head,
 		showDose = true,
 		switchLabel,
 		onSwitch,
@@ -260,9 +264,9 @@
 	<p class="state">{done ? `Отмечено: ${amount} ${p.unit}` : amount ? `${amount} из ${p.normDose} ${p.unit}` : `Не отмечено · ${p.unit}`}</p>
 	{/if}
 
-	{#if noteTitle || onSwitch || onExtra}
+	{#if head || noteTitle || onSwitch || onExtra}
 		<div class="note-head">
-			<span>{noteTitle ?? 'Заметка'}</span>
+			{#if head}<span class="head-icon"><NoteHead {...head} /></span>{:else}<span>{noteTitle ?? 'Заметка'}</span>{/if}
 			{#if onSwitch}<button class="switch" onclick={() => { save(); onSwitch?.(); }}>{switchLabel}</button>{/if}
 			{#if onExtra}<button class="switch" onclick={() => { save(); onExtra?.(); }}>{extraLabel}</button>{/if}
 		</div>
@@ -450,6 +454,11 @@
 		color: var(--muted);
 		text-transform: uppercase;
 		letter-spacing: 0.03em;
+	}
+	.head-icon {
+		text-transform: none;
+		color: var(--text);
+		font-size: 14px;
 	}
 	.switch {
 		border: none;

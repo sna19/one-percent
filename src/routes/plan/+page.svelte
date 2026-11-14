@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { addDays, isDateStr, todayStr, weekDays, weekStart } from '#lib/dates.js';
+	import { dayTitle } from '#lib/today.js';
 	import { colorOf } from '#lib/palette.js';
 	import { groupPractices } from '#lib/groups.js';
 	import type { PlanView, PracticeView, WeekSummary } from '#lib/types.js';
@@ -415,7 +416,7 @@
 			dateLabel={label(n.d)}
 			amount={undefined}
 			doc={noteOf(n.p.id, n.d)}
-			noteTitle="План дня"
+			head={{ kind: 'day', label: dayTitle(n.d), day: Number(n.d.slice(8)) }}
 			showDose={false}
 			extraLabel="На все дни недели"
 			onExtra={() => copyToWeek(n.p, n.d)}
