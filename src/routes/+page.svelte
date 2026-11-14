@@ -218,13 +218,13 @@
 	}
 	const [send, receive] = crossfade({ duration: 220 });
 
-	// Card: tap = norm, tap again = clear; long press = the same choice as on a cell.
-	function cardUp(p: PracticeView) {
-		clearTimeout(timer);
-		if (longPressed || reorder) return;
-		if (byChecklist(p, viewDay)) return openSheet(p, viewDay);
-		mark(p, viewDay, counts(amountOf(p.id, viewDay), p) ? 0 : p.normDose);
+	// Spec 007 F: a tap opens one card at a time (not in «Порядок»)
+	let expanded = $state<number | null>(null);
+	function toggleCard(id: number) {
+		if (reorder) return;
+		expanded = expanded === id ? null : id;
 	}
+
 	const nOf = (p: PracticeView) => daysWithout(p.lastDone, p.createdOn, today);
 	// Priority is chosen among goals; in the plan view only among goals planned for today.
 	const top = $derived(
@@ -699,12 +699,95 @@
 {/snippet}
 
 {#snippet card(p: PracticeView, bonus: boolean, list: ListName, ids: number[])}
-	{@const dayNote = isPlanned(p.id, viewDay) ? dayNoteOf(p.id, viewDay) : null}
-	{#if dayNote && (p.showNoteFull || byChecklist(p, viewDay))}
-		{@render dayCard(p, dayNote, list, ids)}
-	{:else}
-		{@render plainCard(p, bonus, firstLine(dayNote) || firstLine(p.note), list, ids)}
-	{/if}
+	{@const planned = isPlanned(p.id, viewDay)}
+	{@const dayNote = planned ? dayNoteOf(p.id, viewDay) : null}
+	{@const a = amountOf(p.id, viewDay)}
+	{@const dep = depth(a, p)}
+	{@const auto = byChecklist(p, viewDay)}
+	{@const st = checklistStats(dayNote)}
+	{@const isOpen = expanded === p.id}
+	{@const showDay = !!dayNote && (p.showNoteFull || isOpen)}
+	{@const line = showDay || isOpen ? '' : firstLine(dayNote) || firstLine(p.note)}
+	<div class="card-wrap" data-depth={dep}>
+		<!-- Spec 007 F: the box is the only mark; a tap anywhere else opens the card in place.
+		     Keyboard and screen readers use the header button (.chead); the click on the whole card
+		     only widens the touch target. -->
+		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+		<div
+			class="card"
+			class:nobox={auto}
+			class:open={isOpen}
+			data-depth={dep}
+			style={cellStyle(p.color)}
+			role="group"
+			aria-label={p.title}
+			onclick={() => toggleCard(p.id)}
+		>
+			{#if !auto}
+				<button
+					class="box box-btn"
+					disabled={isFutureDay}
+					aria-pressed={counts(a, p)}
+					aria-label="{p.title}: {counts(a, p) ? 'снять отметку' : 'отметить норму'}"
+					onclick={(e) => {
+						e.stopPropagation();
+						mark(p, viewDay, counts(a, p) ? 0 : p.normDose);
+					}}>{#if counts(a, p)}<svg viewBox="0 0 12 12"><path d="M2.5 6.2 5 8.6 9.6 3.4" /></svg>{/if}</button
+				>
+			{/if}
+			<button
+				class="chead"
+				aria-expanded={isOpen}
+				aria-label="{p.title}{bonus ? ', бонус' : ''}: {isOpen ? 'свернуть' : 'раскрыть'}"
+				onclick={(e) => {
+					e.stopPropagation();
+					toggleCard(p.id);
+				}}
+			>
+				<span class="ctitle">{p.title}{#if bonus}<span class="tag">бонус</span>{/if}</span>
+				{#if p.goalTitle !== p.title}<small>{p.goalTitle}</small>{/if}
+			</button>
+			<span class="dose" class:count={auto}
+				>{auto ? `${st.checked} из ${st.total}` : a && !counts(a, p) ? `${a} из ${p.normDose} ${p.unit}` : a ? `${a} ${p.unit}` : doseHint(p)}</span
+			>
+			{#if line}<span class="cnote cline">→ {line}</span>{/if}
+			{#if showDay && dayNote}
+				<div class="cnote">
+					<span class="plan-title">План дня</span>
+					<NoteView doc={dayNote} readonly={isFutureDay} onToggle={(i) => saveDayNote(p, viewDay, toggleTask(dayNote, i))} onOpen={() => {}} />
+				</div>
+			{/if}
+			{#if isOpen}
+				<div class="cnote cexpand" role="presentation" onclick={(e) => e.stopPropagation()}>
+					{#if p.note}
+						<span class="plan-title">Заметка практики</span>
+						<NoteView doc={p.note} onToggle={(i) => saveNote(p, toggleTask(p.note!, i))} onOpen={() => toggleCard(p.id)} />
+					{/if}
+					{#if !auto && !isFutureDay}
+						<div class="dose-row">
+							<button onclick={() => mark(p, viewDay, p.minDose)}>Минимум · {p.minDose}</button>
+							<button onclick={() => mark(p, viewDay, p.normDose)}>Норма · {p.normDose}</button>
+							<form
+								onsubmit={(e) => {
+									e.preventDefault();
+									const v = Number(String(new FormData(e.currentTarget).get('q') ?? '').replace(',', '.'));
+									if (Number.isFinite(v) && v >= 0) mark(p, viewDay, v);
+								}}
+							>
+								<input name="q" inputmode="decimal" placeholder="Количество, {p.unit}" aria-label="Количество, {p.unit}" value={a ?? ''} />
+								<button type="submit" aria-label="Записать количество">✓</button>
+							</form>
+						</div>
+					{/if}
+					<div class="links">
+						<button onclick={() => openSheet(p, viewDay, 'practice')}>Изменить заметку</button>
+						{#if planned}<button onclick={() => openSheet(p, viewDay, 'day')}>Изменить заметку дня</button>{/if}
+					</div>
+				</div>
+			{/if}
+		</div>
+		{@render sideButton(p, list, ids, `${p.title}: ${planned ? 'план дня и заметка' : 'доза и заметка'}`, () => openSheet(p, viewDay))}
+	</div>
 {/snippet}
 
 {#snippet sideButton(p: PracticeView, list: ListName, ids: number[], label: string, open: () => void)}
@@ -720,73 +803,6 @@
 	{:else}
 		<button class="more-btn" aria-label={label} title="Заметка и доза" onclick={open}><Ellipsis size={20} /></button>
 	{/if}
-{/snippet}
-
-{#snippet dayCard(p: PracticeView, dayNote: NoteDoc, list: ListName, ids: number[])}
-	{@const a = amountOf(p.id, viewDay)}
-	{@const dep = depth(a, p)}
-	{@const auto = byChecklist(p, viewDay)}
-	{@const st = checklistStats(dayNote)}
-	<div class="card-wrap" data-depth={dep}>
-		<div class="card daycard" class:nobox={auto} data-depth={dep} style={cellStyle(p.color)}>
-			{#if !auto}
-				<button
-					class="box box-btn"
-					disabled={isFutureDay}
-					aria-label="{p.title}: {counts(a, p) ? 'снять отметку' : 'отметить норму'}"
-					onclick={() => mark(p, viewDay, counts(a, p) ? 0 : p.normDose)}
-					>{#if counts(a, p)}<svg viewBox="0 0 12 12"><path d="M2.5 6.2 5 8.6 9.6 3.4" /></svg>{/if}</button
-				>
-			{/if}
-			<div class="ctext">
-				<span class="ctitle">{p.title}</span>
-				{#if p.goalTitle !== p.title}<small>{p.goalTitle}</small>{/if}
-			</div>
-			<span class="dose" class:count={auto}>{auto ? `${st.checked} из ${st.total}` : a ? `${a} ${p.unit}` : doseHint(p)}</span>
-			<!-- the note takes the card's whole width under its header row -->
-			<div class="cnote">
-				{#if p.showNoteFull}
-					<span class="plan-title">План дня</span>
-					<NoteView
-						doc={dayNote}
-						readonly={isFutureDay}
-						onToggle={(i) => saveDayNote(p, viewDay, toggleTask(dayNote, i))}
-						onOpen={() => openSheet(p, viewDay, 'day')}
-					/>
-				{:else}
-					<button class="cline cline-btn" onclick={() => openSheet(p, viewDay, 'day')}>→ {firstLine(dayNote)}</button>
-				{/if}
-			</div>
-		</div>
-		{@render sideButton(p, list, ids, `${p.title}: план дня и заметка`, () => openSheet(p, viewDay, 'day'))}
-	</div>
-{/snippet}
-
-{#snippet plainCard(p: PracticeView, bonus: boolean, line: string, list: ListName, ids: number[])}
-	{@const a = amountOf(p.id, viewDay)}
-	{@const dep = depth(a, p)}
-	<div class="card-wrap" data-depth={dep}>
-		<button
-			class="card"
-			data-depth={dep}
-			style={cellStyle(p.color)}
-			aria-label="{p.title}: {a ? `${a} ${p.unit}` : 'не отмечено'}{bonus ? ', бонус' : ''}"
-			onpointerdown={() => down(p, viewDay)}
-			onpointerup={() => cardUp(p)}
-			onpointerleave={cancel}
-			onpointercancel={cancel}
-			oncontextmenu={(e) => e.preventDefault()}
-		>
-			<span class="box" aria-hidden="true">{#if counts(a, p)}<svg viewBox="0 0 12 12"><path d="M2.5 6.2 5 8.6 9.6 3.4" /></svg>{/if}</span>
-			<span class="ctext">
-				<span class="ctitle">{p.title}{#if bonus}<span class="tag">бонус</span>{/if}</span>
-				{#if p.goalTitle !== p.title}<small>{p.goalTitle}</small>{/if}
-			</span>
-			<span class="dose">{a && !counts(a, p) ? `${a} из ${p.normDose} ${p.unit}` : a ? `${a} ${p.unit}` : doseHint(p)}</span>
-			{#if line}<span class="cnote cline">→ {line}</span>{/if}
-		</button>
-		{@render sideButton(p, list, ids, `${p.title}: доза и заметка`, () => openSheet(p, viewDay))}
-	</div>
 {/snippet}
 
 {#snippet practiceRow(p: PracticeView, title: string, sub: string, indent: boolean)}
@@ -1198,17 +1214,11 @@
 		stroke-linecap: round;
 		stroke-linejoin: round;
 	}
-	.ctext {
-		flex: 1;
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
-	}
 	.ctitle {
 		font-size: 16px;
 		font-weight: 600;
 	}
-	.ctext small {
+	.chead small {
 		font-size: 13px;
 		opacity: 0.75;
 	}
@@ -1244,11 +1254,6 @@
 		position: relative;
 	}
 	/* Spec 006: a day card is not one big button — the box marks, the text opens the day note */
-	.daycard {
-		cursor: default;
-		align-items: flex-start;
-		box-sizing: border-box;
-	}
 	.more-btn.handle {
 		touch-action: none;
 		font-size: 22px;
@@ -1265,8 +1270,82 @@
 		box-shadow: 0 6px 18px rgb(0 0 0 / 0.25);
 		transform: scale(1.02);
 	}
-	.daycard .dose {
-		margin-top: 3px;
+	.card {
+		cursor: pointer;
+	}
+	.chead {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		min-width: 0;
+		padding: 0;
+		border: none;
+		background: none;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.box-btn {
+		position: relative;
+	}
+	/* the box's touch area is 44 pt even though it looks smaller */
+	.box-btn::before {
+		content: '';
+		position: absolute;
+		inset: -10px;
+	}
+	.box-btn:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+	.cexpand {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		cursor: default;
+	}
+	.dose-row {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 8px;
+	}
+	.dose-row form {
+		grid-column: 1 / -1;
+		display: flex;
+		gap: 6px;
+	}
+	.dose-row button,
+	.dose-row input,
+	.links button {
+		min-height: 44px;
+		border-radius: 10px;
+		border: 1px solid color-mix(in oklab, var(--fg) 30%, transparent);
+		background: color-mix(in oklab, var(--surface) 70%, transparent);
+		color: var(--text);
+		font: inherit;
+		font-size: 15px;
+		cursor: pointer;
+	}
+	.dose-row input {
+		flex: 1;
+		min-width: 0;
+		padding: 0 10px;
+		font-size: 17px;
+		cursor: text;
+	}
+	.dose-row form button {
+		width: 48px;
+	}
+	.links {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+	.links button {
+		padding: 0 12px;
+		background: none;
+		color: var(--fg);
 	}
 	.box-btn {
 		padding: 0;
@@ -1282,16 +1361,6 @@
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		opacity: 0.75;
-	}
-	.cline-btn {
-		border: none;
-		background: none;
-		padding: 0;
-		text-align: left;
-		color: inherit;
-		font: inherit;
-		font-size: 13px;
-		cursor: pointer;
 	}
 	.card .dose {
 		margin-right: 34px;
