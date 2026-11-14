@@ -38,6 +38,40 @@ export function firstLine(doc: NoteDoc | null | undefined): string {
 	return doc ? walk(doc.content) : '';
 }
 
+/**
+ * Task 11: the same first line as `firstLine`, in pieces, so links on a collapsed card stay tappable.
+ * Each piece is plain text or a link with a safe address; spaces are collapsed like in `firstLine`.
+ */
+export function firstLineParts(doc: NoteDoc | null | undefined): { text: string; href: string | null }[] {
+	const find = (nodes: NoteNode[] | undefined): NoteNode | null => {
+		for (const n of nodes ?? []) {
+			if (BLOCKS.has(n.type)) {
+				if (textOf(n).trim()) return n;
+			} else {
+				const f = find(n.content);
+				if (f) return f;
+			}
+		}
+		return null;
+	};
+	const block = doc ? find(doc.content) : null;
+	if (!block) return [];
+	const parts: { text: string; href: string | null }[] = [];
+	for (const n of block.content ?? []) {
+		const text = textOf(n);
+		const href = safeHref(n.marks?.find((m) => m.type === 'link')?.attrs?.href);
+		const last = parts.at(-1);
+		if (last && last.href === href) last.text += text;
+		else parts.push({ text, href });
+	}
+	for (const p of parts) p.text = p.text.replace(/\s+/g, ' ');
+	if (parts.length) {
+		parts[0].text = parts[0].text.trimStart();
+		parts[parts.length - 1].text = parts[parts.length - 1].text.trimEnd();
+	}
+	return parts.filter((p) => p.text);
+}
+
 export function isEmptyNote(doc: NoteDoc | null | undefined): boolean {
 	return !firstLine(doc);
 }
@@ -53,6 +87,45 @@ export function isNoteDoc(v: unknown): v is NoteDoc {
 		return true;
 	};
 	return node(v, 0) && (v as NoteNode).type === 'doc';
+}
+
+// ── Task 11: links in notes ────────────────────────────────────────────────
+
+/**
+ * A link address that is safe to store and open: only http, https and mailto. An address without a
+ * scheme gets https:// (a bare e-mail gets mailto:). Anything else (javascript:, data:, …) → null.
+ */
+export function safeHref(raw: unknown): string | null {
+	if (typeof raw !== 'string') return null;
+	const s = raw.trim();
+	if (!s || s.length > 2000 || /[\s<>"]/.test(s)) return null;
+	const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(s);
+	if (!scheme) {
+		if (/^[^@/]+@[^@/]+\.[^@/]+$/.test(s)) return `mailto:${s}`;
+		if (s.startsWith('//')) return `https:${s}`;
+		return `https://${s}`;
+	}
+	const name = scheme[1].toLowerCase();
+	// «example.com:8080/x» is a host with a port, not a scheme
+	if ((name.includes('.') || name === 'localhost') && /^\d+(\/|$)/.test(s.slice(scheme[0].length)))
+		return `https://${s}`;
+	if (name === 'http' || name === 'https') return /^https?:\/\/[^/]/i.test(s) ? s : null;
+	if (name === 'mailto') return s.length > 7 ? s : null;
+	return null;
+}
+
+/** A copy where every link mark has a safe address; unsafe links lose the link, the text stays. */
+export function sanitizeLinks<T extends NoteNode>(n: T): T {
+	const copy = { ...n } as T;
+	if (n.marks) {
+		copy.marks = n.marks.flatMap((m) => {
+			if (m.type !== 'link') return [m];
+			const href = safeHref(m.attrs?.href);
+			return href ? [{ type: 'link', attrs: { href } }] : [];
+		});
+	}
+	if (n.content) copy.content = n.content.map(sanitizeLinks);
+	return copy;
 }
 
 // ── Spec 006: day notes and marks by checklist ─────────────────────────────

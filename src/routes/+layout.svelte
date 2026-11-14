@@ -12,6 +12,7 @@
 		--text: #1d1d1f;
 		--muted: #6e6e73;
 		--line: #d8d6d0;
+		--link: #0a66d0;
 		--today: #1d1d1f;
 		--plus-mix: black 28%;
 		--half: 38%;
@@ -24,6 +25,7 @@
 			--text: #f2f2f4;
 			--muted: #9a9aa2;
 			--line: #3a3a40;
+			--link: #6cb4ff;
 			--today: #f2f2f4;
 			--plus-mix: black 18%;
 			--half: 30%;

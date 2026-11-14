@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { firstLine, isNoteDoc, type NoteDoc } from './note.js';
+import { firstLine, firstLineParts, isNoteDoc, safeHref, sanitizeLinks, type NoteDoc } from './note.js';
 
 const doc = (...content: object[]) => ({ type: 'doc', content }) as NoteDoc;
 const p = (...t: string[]) => ({ type: 'paragraph', content: t.map((text) => ({ type: 'text', text })) });
@@ -56,5 +56,61 @@ describe('day notes (Spec 006)', async () => {
 	});
 	it('toggleTask flips one box by position', () => {
 		expect(checklistStats(toggleTask(meals, 3))).toEqual({ total: 4, checked: 3 });
+	});
+});
+
+describe('safeHref', () => {
+	it('keeps http, https and mailto', () => {
+		expect(safeHref('https://example.com/a?b=1')).toBe('https://example.com/a?b=1');
+		expect(safeHref('HTTP://example.com')).toBe('HTTP://example.com');
+		expect(safeHref('mailto:me@example.com')).toBe('mailto:me@example.com');
+	});
+	it('adds a scheme to a bare address', () => {
+		expect(safeHref(' example.com/x ')).toBe('https://example.com/x');
+		expect(safeHref('localhost:8080/x')).toBe('https://localhost:8080/x');
+		expect(safeHref('me@example.com')).toBe('mailto:me@example.com');
+	});
+	it('rejects everything else', () => {
+		for (const bad of ['javascript:alert(1)', 'JavaScript:alert(1)', 'data:text/html,x', 'vbscript:x', 'file:///etc', 'https://', 'a b', '', null, 5])
+			expect(safeHref(bad)).toBeNull();
+	});
+});
+
+describe('sanitizeLinks', () => {
+	it('normalises safe links and removes unsafe ones, keeping other marks', () => {
+		const d = doc({
+			type: 'paragraph',
+			content: [
+				{ type: 'text', text: 'a', marks: [{ type: 'bold' }, { type: 'link', attrs: { href: 'x.org', target: '_self' } }] },
+				{ type: 'text', text: 'b', marks: [{ type: 'link', attrs: { href: 'javascript:1' } }] }
+			]
+		});
+		const [a, b] = sanitizeLinks(d).content![0].content!;
+		expect(a.marks).toEqual([{ type: 'bold' }, { type: 'link', attrs: { href: 'https://x.org' } }]);
+		expect(b.marks).toEqual([]);
+	});
+});
+
+describe('firstLineParts', () => {
+	it('splits the first line into text and links', () => {
+		const d = doc(
+			{ type: 'paragraph' },
+			{
+				type: 'paragraph',
+				content: [
+					{ type: 'text', text: '  Читать ' },
+					{ type: 'text', text: 'учебник', marks: [{ type: 'link', attrs: { href: 'https://a.example' } }] },
+					{ type: 'text', text: ' и ', marks: [{ type: 'bold' }] },
+					{ type: 'text', text: 'плохо', marks: [{ type: 'link', attrs: { href: 'javascript:1' } }] }
+				]
+			}
+		);
+		expect(firstLineParts(d)).toEqual([
+			{ text: 'Читать ', href: null },
+			{ text: 'учебник', href: 'https://a.example' },
+			{ text: ' и плохо', href: null }
+		]);
+		expect(firstLineParts(d).map((x) => x.text).join('')).toBe(firstLine(d));
+		expect(firstLineParts(null)).toEqual([]);
 	});
 });

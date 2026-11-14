@@ -4,7 +4,8 @@
 	import StarterKit from '@tiptap/starter-kit';
 	import Highlight from '@tiptap/extension-highlight';
 	import { TaskItem, TaskList } from '@tiptap/extension-list';
-	import type { NoteDoc } from './note.js';
+	import LinkIcon from '@lucide/svelte/icons/link';
+	import { safeHref, type NoteDoc } from './note.js';
 	import type { PracticeView } from './types.js';
 	import { colorOf } from './palette.js';
 
@@ -90,7 +91,16 @@
 					horizontalRule: false,
 					strike: false,
 					orderedList: false,
-					link: false
+					// task 11: links — typed or pasted addresses become links; a tap in the editor does not open them
+					link: {
+						openOnClick: false,
+						autolink: true,
+						linkOnPaste: true,
+						defaultProtocol: 'https',
+						protocols: ['mailto'],
+						isAllowedUri: (url) => !!safeHref(url),
+						HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer', class: null }
+					}
 				}),
 				Highlight,
 				TaskList,
@@ -135,6 +145,82 @@
 		void tick;
 		return editor?.isActive(name) ?? false;
 	};
+
+	// ── task 11: links ──────────────────────────────────────────────
+	interface LinkForm {
+		/** a link is being changed (not created) */
+		edit: boolean;
+		/** text was selected: it becomes the name, only the address is asked */
+		fromSelection: boolean;
+		from: number;
+		to: number;
+		text: string;
+		href: string;
+		error?: string;
+	}
+	let linkForm = $state<LinkForm | null>(null);
+
+	/** the link under the cursor (tap on a link in the editor), for the small panel */
+	const currentLink = $derived.by(() => {
+		void tick;
+		if (!editor || linkForm || !editor.isActive('link')) return null;
+		const href = safeHref(editor.getAttributes('link').href);
+		return href ? { href } : null;
+	});
+
+	function linkRange(e: Editor) {
+		e.chain().extendMarkRange('link').run();
+		const { from, to } = e.state.selection;
+		return { from, to, text: e.state.doc.textBetween(from, to, ' ') };
+	}
+
+	function openLinkForm() {
+		if (!editor) return;
+		if (editor.isActive('link')) return editLink();
+		const { from, to, empty } = editor.state.selection;
+		const text = empty ? '' : editor.state.doc.textBetween(from, to, ' ');
+		linkForm = { edit: false, fromSelection: !empty, from, to, text, href: '' };
+	}
+
+	function editLink() {
+		if (!editor) return;
+		const href = editor.getAttributes('link').href ?? '';
+		linkForm = { edit: true, fromSelection: false, ...linkRange(editor), href };
+	}
+
+	function removeLink() {
+		if (!editor) return;
+		const { from, to } = linkRange(editor);
+		editor.chain().setTextSelection({ from, to }).unsetLink().setTextSelection(to).run();
+		dirty = true;
+		save();
+	}
+
+	function submitLink() {
+		if (!editor || !linkForm) return;
+		const f = linkForm;
+		const href = safeHref(f.href);
+		if (!href) {
+			linkForm = { ...f, error: 'Нужен адрес http, https или почта' };
+			return;
+		}
+		const text = f.text.trim() || href.replace(/^mailto:/, '');
+		const chain = editor.chain().focus();
+		if (f.fromSelection) {
+			chain.setTextSelection({ from: f.from, to: f.to }).setLink({ href }).setTextSelection(f.to);
+		} else {
+			// keep the other marks (bold, highlight…) of the text being renamed
+			const keep = f.edit ? (editor.state.doc.nodeAt(f.from)?.marks ?? []).filter((m) => m.type.name !== 'link').map((m) => m.toJSON()) : [];
+			chain
+				.insertContentAt({ from: f.from, to: f.to }, { type: 'text', text, marks: [...keep, { type: 'link', attrs: { href } }] })
+				.setTextSelection(f.from + text.length)
+				.unsetMark('link');
+		}
+		chain.run();
+		linkForm = null;
+		dirty = true;
+		save();
+	}
 
 	const c = $derived(colorOf(p.color));
 	const done = $derived(amount !== undefined && amount >= p.minDose && amount > 0);
@@ -193,7 +279,55 @@
 				onclick={() => editor && t.run(editor)}>{t.icon}</button
 			>
 		{/each}
+		<button
+			class="tool"
+			class:on={isActive('link') || !!linkForm}
+			aria-label="Ссылка"
+			aria-pressed={isActive('link')}
+			onpointerdown={(e) => e.preventDefault()}
+			onclick={() => (linkForm ? (linkForm = null) : openLinkForm())}><LinkIcon size={18} /></button
+		>
 	</div>
+	{#if linkForm}
+		<!-- novalidate: «example.com» without a scheme is fine, safeHref adds https:// -->
+		<form
+			class="link-form"
+			novalidate
+			aria-label={linkForm.edit ? 'Изменить ссылку' : 'Новая ссылка'}
+			onsubmit={(e) => {
+				e.preventDefault();
+				submitLink();
+			}}
+		>
+			{#if !linkForm.fromSelection}
+				<input type="text" placeholder="Название" aria-label="Название ссылки" bind:value={linkForm.text} />
+			{:else}
+				<p class="link-name">«{linkForm.text}»</p>
+			{/if}
+			<!-- svelte-ignore a11y_autofocus -->
+			<input
+				type="url"
+				inputmode="url"
+				autocapitalize="off"
+				autocomplete="off"
+				placeholder="https://…"
+				aria-label="Адрес ссылки"
+				autofocus
+				bind:value={linkForm.href}
+			/>
+			{#if linkForm.error}<p class="link-error" role="alert">{linkForm.error}</p>{/if}
+			<div class="link-actions">
+				<button type="button" class="quiet" onclick={() => (linkForm = null)}>Отмена</button>
+				<button type="submit" class="primary">{linkForm.edit ? 'Сохранить' : 'Вставить'}</button>
+			</div>
+		</form>
+	{:else if currentLink}
+		<div class="link-bar" role="toolbar" aria-label="Ссылка">
+			<a href={currentLink.href} target="_blank" rel="noopener noreferrer">Открыть</a>
+			<button onpointerdown={(e) => e.preventDefault()} onclick={editLink}>Изменить</button>
+			<button onpointerdown={(e) => e.preventDefault()} onclick={removeLink}>Убрать ссылку</button>
+		</div>
+	{/if}
 	<div class="editor" bind:this={host}></div>
 </div>
 
@@ -331,7 +465,7 @@
 	}
 	.toolbar {
 		display: grid;
-		grid-template-columns: repeat(6, 1fr);
+		grid-template-columns: repeat(7, 1fr);
 		gap: 4px;
 		padding: 4px;
 		border-radius: 10px;
@@ -384,6 +518,88 @@
 	.editor :global(.note-editor ul) {
 		padding-left: 22px;
 		margin: 6px 0;
+	}
+	.editor :global(.note-editor a) {
+		color: var(--link);
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+	.link-form {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding: 8px;
+		border-radius: 10px;
+		background: var(--bg);
+	}
+	.link-form input {
+		min-height: 40px;
+		padding: 0 10px;
+		border-radius: 8px;
+		border: 1px solid var(--line);
+		background: var(--surface);
+		color: var(--text);
+		font-size: 16px;
+	}
+	.link-name {
+		margin: 0;
+		font-size: 14px;
+		color: var(--muted);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.link-error {
+		margin: 0;
+		font-size: 13px;
+		color: #d0342c;
+	}
+	.link-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 8px;
+	}
+	.link-actions button {
+		min-height: 40px;
+		padding: 0 14px;
+		border-radius: 8px;
+		border: none;
+		font-size: 15px;
+	}
+	.link-actions .quiet {
+		background: none;
+		color: var(--muted);
+	}
+	.link-actions .primary {
+		background: var(--text);
+		color: var(--bg);
+		font-weight: 600;
+	}
+	.link-bar {
+		display: flex;
+		gap: 4px;
+		padding: 4px;
+		border-radius: 10px;
+		background: var(--bg);
+	}
+	.link-bar a,
+	.link-bar button {
+		flex: 1;
+		min-height: 40px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+		border-radius: 8px;
+		background: none;
+		color: var(--text);
+		font-size: 14px;
+		text-decoration: none;
+		white-space: nowrap;
+	}
+	.link-bar a {
+		color: var(--link);
+		font-weight: 600;
 	}
 	.editor :global(.note-editor mark) {
 		background: #f5d76e;

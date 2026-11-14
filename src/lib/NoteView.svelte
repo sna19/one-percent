@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { NoteDoc, NoteNode } from './note.js';
+	import { safeHref, type NoteDoc, type NoteNode } from './note.js';
 
 	/**
 	 * Spec 006 — a day note shown on the Today card: read-only, formatting kept, built from the
@@ -27,6 +27,7 @@
 	});
 
 	const has = (n: NoteNode, mark: string) => n.marks?.some((m) => m.type === mark) ?? false;
+	const hrefOf = (n: NoteNode) => safeHref(n.marks?.find((m) => m.type === 'link')?.attrs?.href);
 </script>
 
 <!-- the text area opens the editor; boxes stop the tap from reaching it -->
@@ -78,6 +79,11 @@
 {/snippet}
 
 {#snippet styled(t: NoteNode)}
+	{@const href = hrefOf(t)}
+	{#if href}<a {href} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()}>{@render marked(t)}</a
+		>{:else}{@render marked(t)}{/if}
+{/snippet}
+{#snippet marked(t: NoteNode)}
 	{#if has(t, 'highlight')}<mark>{@render bold(t)}</mark>{:else}{@render bold(t)}{/if}
 {/snippet}
 {#snippet bold(t: NoteNode)}
@@ -156,6 +162,12 @@
 		stroke-width: 2.2;
 		stroke-linecap: round;
 		stroke-linejoin: round;
+	}
+	a {
+		color: var(--link);
+		text-decoration: underline;
+		text-underline-offset: 2px;
+		word-break: break-word;
 	}
 	mark {
 		background: #f5d76e;

@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, isNull, lt, max } from 'drizzle-orm';
 import { addDays, isDateStr, weekDays, weekStart, type DateStr } from '../dates.js';
 import type { PlanView, WeekSummary } from '../types.js';
-import { checklistAmount, isEmptyNote, isNoteDoc, NOTE_MAX, uncheck, type NoteDoc } from '../note.js';
+import { checklistAmount, isEmptyNote, isNoteDoc, NOTE_MAX, sanitizeLinks, uncheck, type NoteDoc } from '../note.js';
 import { setEntry } from './entries.js';
 import type { Db } from './db.js';
 import {
@@ -305,7 +305,7 @@ export function setPlanNote(
 	if (!isDateStr(date)) throw new InputError('Неверная дата');
 	if (note !== null && !isNoteDoc(note)) throw new InputError('Заметка в неверном формате');
 	if (Number.isNaN(Date.parse(updatedAt))) throw new InputError('Неверное время изменения');
-	const doc = note as NoteDoc | null;
+	const doc = note ? sanitizeLinks(note as NoteDoc) : null;
 	const empty = !doc || (isEmptyNote(doc) && !JSON.stringify(doc).includes('"taskItem"'));
 	const json = empty ? null : JSON.stringify(doc);
 	if (json && json.length > NOTE_MAX) throw new InputError('Заметка слишком длинная');

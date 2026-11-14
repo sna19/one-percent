@@ -1,5 +1,5 @@
 import { and, eq, isNull, lt, or } from 'drizzle-orm';
-import { isNoteDoc, isEmptyNote, NOTE_MAX, type NoteDoc } from '../note.js';
+import { isNoteDoc, isEmptyNote, NOTE_MAX, sanitizeLinks, type NoteDoc } from '../note.js';
 import type { Db } from './db.js';
 import { practices } from './schema.js';
 import { InputError } from './settings.js';
@@ -11,6 +11,7 @@ import { InputError } from './settings.js';
  */
 export function setNote(db: Db, practiceId: number, note: unknown, updatedAt: string): boolean {
 	if (note !== null && !isNoteDoc(note)) throw new InputError('Заметка в неверном формате');
+	if (note) note = sanitizeLinks(note);
 	const empty = note === null || (isEmptyNote(note as NoteDoc) && !hasChecklist(note as NoteDoc));
 	const json = empty ? null : JSON.stringify(note);
 	if (json && json.length > NOTE_MAX) throw new InputError('Заметка слишком длинная');

@@ -31,7 +31,7 @@
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import NoteView from '#lib/NoteView.svelte';
-	import { checklistAmount, checklistStats, firstLine, toggleTask, type NoteDoc } from '#lib/note.js';
+	import { checklistAmount, checklistStats, firstLine, firstLineParts, toggleTask, type NoteDoc } from '#lib/note.js';
 	import type { PracticeView, WeekData } from '#lib/types.js';
 
 	const DAY_NAMES = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
@@ -707,7 +707,7 @@
 	{@const st = checklistStats(dayNote)}
 	{@const isOpen = expanded === p.id}
 	{@const showDay = !!dayNote && (p.showNoteFull || isOpen)}
-	{@const line = showDay || isOpen ? '' : firstLine(dayNote) || firstLine(p.note)}
+	{@const line = showDay || isOpen ? [] : firstLine(dayNote) ? firstLineParts(dayNote) : firstLineParts(p.note)}
 	<div class="card-wrap" data-depth={dep}>
 		<!-- Spec 007 F: the box is the only mark; a tap anywhere else opens the card in place.
 		     Keyboard and screen readers use the header button (.chead); the click on the whole card
@@ -750,7 +750,14 @@
 			<span class="dose" class:count={auto}
 				>{auto ? `${st.checked} из ${st.total}` : a && !counts(a, p) ? `${a} из ${p.normDose} ${p.unit}` : a ? `${a} ${p.unit}` : doseHint(p)}</span
 			>
-			{#if line}<span class="cnote cline">→ {line}</span>{/if}
+			{#if line.length}<span class="cnote cline"
+					>→ {#each line as part, i (i)}{#if part.href}<a
+								href={part.href}
+								target="_blank"
+								rel="noopener noreferrer"
+								onclick={(e) => e.stopPropagation()}>{part.text}</a
+							>{:else}{part.text}{/if}{/each}</span
+				>{/if}
 			{#if showDay && dayNote}
 				<div class="cnote">
 					<span class="plan-title">План дня</span>
@@ -1400,6 +1407,19 @@
 	.card-wrap[data-depth='1'] .more-btn,
 	.card-wrap[data-depth='1.5'] .more-btn {
 		color: #fff;
+	}
+	/* task 11: links on cards — the link colour, underlined; on a filled card (white text) the text
+	   colour with a thicker underline, so they stay readable on any practice colour */
+	.cnote :global(a) {
+		color: var(--link);
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+	.card[data-depth='1'] :global(a),
+	.card[data-depth='1.5'] :global(a) {
+		color: inherit;
+		text-decoration-thickness: 2px;
+		font-weight: 600;
 	}
 	.cline {
 		font-size: 13px;

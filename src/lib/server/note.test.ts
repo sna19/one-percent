@@ -32,4 +32,14 @@ describe('setNote', () => {
 		expect(() => setNote(db, 1, '<script>', '2026-11-13T10:00:00.000Z')).toThrow(InputError);
 		expect(() => setNote(db, 99, note('x'), '2026-11-13T10:00:00.000Z')).toThrow(InputError);
 	});
+	it('keeps safe links, drops unsafe ones (the text stays)', () => {
+		const db = setup();
+		const link = (text: string, href: string) => ({ type: 'text', text, marks: [{ type: 'link', attrs: { href, onclick: 'x' } }] });
+		const doc = { type: 'doc', content: [{ type: 'paragraph', content: [link('сайт', 'example.com'), link('плохо', 'javascript:alert(1)')] }] };
+		setNote(db, 1, doc, '2026-11-14T10:00:00.000Z');
+		const [a, b] = JSON.parse(stored(db).note!).content[0].content;
+		expect(a.marks).toEqual([{ type: 'link', attrs: { href: 'https://example.com' } }]);
+		expect(b.text).toBe('плохо');
+		expect(b.marks).toEqual([]);
+	});
 });
