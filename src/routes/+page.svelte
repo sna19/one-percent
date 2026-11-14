@@ -18,6 +18,18 @@
 	import { crossfade } from 'svelte/transition';
 	import { flip } from 'svelte/animate';
 	import NoteSheet from '#lib/NoteSheet.svelte';
+	import TopBar from '#lib/TopBar.svelte';
+	import TabBar from '#lib/TabBar.svelte';
+	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import GripVertical from '@lucide/svelte/icons/grip-vertical';
+	import Pencil from '@lucide/svelte/icons/pencil';
+	import Target from '@lucide/svelte/icons/target';
+	import Shapes from '@lucide/svelte/icons/shapes';
+	import CalendarPlus from '@lucide/svelte/icons/calendar-plus';
+	import Layers from '@lucide/svelte/icons/layers';
+	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import NoteView from '#lib/NoteView.svelte';
 	import { checklistAmount, checklistStats, firstLine, toggleTask, type NoteDoc } from '#lib/note.js';
 	import type { PracticeView, WeekData } from '#lib/types.js';
@@ -355,6 +367,8 @@
 	}
 
 	onMount(() => {
+		const q = new URLSearchParams(location.search).get('tab');
+		if (q === 'week' || q === 'all') tab = q;
 		load();
 		const refresh = () => {
 			const t = todayStr();
@@ -383,24 +397,48 @@
 
 <main>
 	{#if tab === 'today'}
-	<header class="today-head">
-		<div>
-			<h1>{dayTitle(today)}</h1>
-			{#if week && day.planned}<span>по плану {day.plannedDone} из {day.planned}</span>{/if}
-		</div>
-		{#if week}<button class="order-btn" class:on={reorder} aria-pressed={reorder} onclick={() => (reorder = !reorder)}>{reorder ? 'Готово' : 'Порядок'}</button>{/if}
-	</header>
+		<TopBar
+			title={dayTitle(today)}
+			subtitle={week && day.planned ? `по плану ${day.plannedDone} из ${day.planned}` : undefined}
+			menu={[{ label: 'Изменить план', icon: Pencil, href: `/plan?start=${start}&from=today` }]}
+		>
+			{#snippet actions()}
+				<button class="icon" class:on={reorder} aria-pressed={reorder} aria-label="Порядок карточек" title="Порядок" onclick={() => (reorder = !reorder)}><GripVertical size={22} /></button>
+				<a class="icon" href="/settings?from=today" aria-label="Настройки" title="Настройки"><SettingsIcon size={22} /></a>
+			{/snippet}
+		</TopBar>
+		{#if reorder}
+			<div class="reorder-hint"><span>Перетаскивайте карточки за ≡</span><button onclick={() => (reorder = false)}>Готово</button></div>
+		{/if}
+	{:else if tab === 'week'}
+		<TopBar
+			title="Неделя"
+			subtitle="{label(days[0])} – {label(days[6])}"
+			menu={[
+				{ label: 'Шаблоны недели', icon: Layers, href: `/plan?start=${start}&from=week&templates=1` },
+				{ label: 'Новая неделя с нуля', icon: CalendarPlus, href: `/plan?start=${start}&from=week&fresh=1` }
+			]}
+			below={weekNav}
+		>
+			{#snippet actions()}
+				<a class="icon" href="/plan?start={start}&from=week" aria-label="Изменить план" title="Изменить план"><Pencil size={22} /></a>
+				<a class="icon" href="/settings?from=week" aria-label="Настройки" title="Настройки"><SettingsIcon size={22} /></a>
+			{/snippet}
+		</TopBar>
 	{:else}
-	<header>
-		<button class="nav" onclick={() => go(-1)} aria-label="Прошлая неделя">‹</button>
-		<div class="range">
-			<span>{label(days[0])} – {label(days[6])}</span>
-			{#if !isCurrentWeek}
-				<button class="link" onclick={toToday}>к сегодня</button>
-			{/if}
-		</div>
-		<button class="nav" onclick={() => go(1)} aria-label="Следующая неделя">›</button>
-	</header>
+		<TopBar title="Всё" subtitle="{label(days[0])} – {label(days[6])}" below={weekNav}>
+			{#snippet actions()}
+				<button
+					class="icon"
+					aria-label={allLens === 'goal' ? 'Группировка по целям; переключить на форматы' : 'Группировка по форматам; переключить на цели'}
+					title={allLens === 'goal' ? 'Цели' : 'Форматы'}
+					onclick={() => setLens(allLens === 'goal' ? 'format' : 'goal')}
+					>{#if allLens === 'goal'}<Target size={22} />{:else}<Shapes size={22} />{/if}</button
+				>
+				<a class="icon" href="/settings?from=all" aria-label="Настройки" title="Настройки"><SettingsIcon size={22} /></a>
+			{/snippet}
+		</TopBar>
+		<p class="lens-label">{allLens === 'goal' ? 'По целям' : 'По форматам'}</p>
 	{/if}
 
 	{#if offline && week}
@@ -417,17 +455,6 @@
 			{/if}
 		</div>
 	{:else}
-		<div class="lens" role="tablist" aria-label="Вкладки">
-			<button role="tab" aria-selected={tab === 'today'} class:on={tab === 'today'} onclick={() => setTab('today')}>Сегодня</button>
-			<button role="tab" aria-selected={tab === 'week'} class:on={tab === 'week'} onclick={() => setTab('week')}>Неделя</button>
-			<button role="tab" aria-selected={tab === 'all'} class:on={tab === 'all'} onclick={() => setTab('all')}>Всё</button>
-		</div>
-		{#if tab === 'all'}
-			<div class="sublens" role="radiogroup" aria-label="Группировка">
-				<button role="radio" aria-checked={allLens === 'goal'} class:on={allLens === 'goal'} onclick={() => setLens('goal')}>По целям</button>
-				<button role="radio" aria-checked={allLens === 'format'} class:on={allLens === 'format'} onclick={() => setLens('format')}>По формату</button>
-			</div>
-		{/if}
 		{#if (isPlan || tab === 'today') && week.plan?.status === 'draft'}
 			<div class="draft">
 				<p>Черновик {sourceLabel(week.plan.source)}</p>
@@ -505,7 +532,6 @@
 		{#if isPlan}
 			<p class="week-sum">
 				По плану {summary.done} из {summary.planned}{summary.bonus ? `, бонусов ${summary.bonus}` : ''}
-				{#if week.plan && start >= weekStart(today)}· <a href="/plan?start={start}">Изменить план</a>{/if}
 			</p>
 		{/if}
 
@@ -514,8 +540,16 @@
 		{/if}
 		{/if}
 	{/if}
-	<a class="settings" href="/settings" data-sveltekit-reload>Настройки</a>
 </main>
+<TabBar {tab} onselect={(t) => setTab(t)} />
+
+{#snippet weekNav()}
+	<div class="weeknav">
+		<button class="icon" onclick={() => go(-1)} aria-label="Прошлая неделя"><ChevronLeft size={22} /></button>
+		{#if !isCurrentWeek}<button class="link" onclick={toToday}>к текущей неделе</button>{:else}<span></span>{/if}
+		<button class="icon" onclick={() => go(1)} aria-label="Следующая неделя"><ChevronRight size={22} /></button>
+	</div>
+{/snippet}
 
 {#if sheet && sheetPractice}
 	{@const sp = sheetPractice}
@@ -583,7 +617,6 @@
 		</details>
 	{/if}
 
-	{#if week?.plan}<p class="week-sum"><a href="/plan?start={start}">Изменить план</a></p>{/if}
 {/snippet}
 
 {#snippet card(p: PracticeView, bonus: boolean, list: ListName, ids: number[])}
@@ -603,10 +636,10 @@
 			onpointerdown={(e) => dragStart(e, list, p.id, ids)}
 			onpointermove={dragMove}
 			onpointerup={dragEnd}
-			onpointercancel={dragEnd}>≡</button
+			onpointercancel={dragEnd}><GripVertical size={22} /></button
 		>
 	{:else}
-		<button class="more-btn" aria-label={label} onclick={open}>⋯</button>
+		<button class="more-btn" aria-label={label} title="Заметка и доза" onclick={open}><Ellipsis size={20} /></button>
 	{/if}
 {/snippet}
 
@@ -708,36 +741,7 @@
 	main {
 		max-width: 560px;
 		margin: 0 auto;
-		padding: calc(env(safe-area-inset-top) + 12px) 12px calc(env(safe-area-inset-bottom) + 24px);
-	}
-	header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		margin-bottom: 12px;
-	}
-	.range {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		font-weight: 600;
-	}
-	.nav {
-		background: none;
-		border: none;
-		font-size: 28px;
-		width: 44px;
-		height: 44px;
-		cursor: pointer;
-	}
-	.link {
-		background: none;
-		border: none;
-		color: var(--muted);
-		font-size: 13px;
-		font-weight: 400;
-		padding: 2px;
-		cursor: pointer;
+		padding: 0 12px calc(env(safe-area-inset-bottom) + 84px);
 	}
 	.retry {
 		min-height: 44px;
@@ -849,29 +853,6 @@
 		background: var(--surface);
 		border-radius: 12px;
 		font-size: 15px;
-	}
-	.lens {
-		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 2px;
-		padding: 2px;
-		margin: 0 0 12px;
-		border-radius: 10px;
-		background: color-mix(in oklab, var(--line) 60%, transparent);
-	}
-	.lens button {
-		min-height: 36px;
-		border: none;
-		border-radius: 8px;
-		background: none;
-		font-size: 14px;
-		color: var(--muted);
-		cursor: pointer;
-	}
-	.lens button.on {
-		background: var(--surface);
-		color: var(--text);
-		font-weight: 600;
 	}
 	button.name {
 		background: none;
@@ -1005,53 +986,10 @@
 		color: var(--muted);
 		text-align: center;
 	}
-	.week-sum a {
-		color: var(--text);
-	}
-	.today-head span {
-		display: block;
-		margin-top: 2px;
-	}
 	.dose.count {
 		white-space: nowrap;
 		font-size: 14px;
 		font-weight: 600;
-	}
-	.today-head {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 12px;
-		min-height: 44px;
-		margin-bottom: 8px;
-	}
-	.today-head h1 {
-		font-size: 22px;
-		margin: 0;
-	}
-	.today-head span {
-		color: var(--muted);
-		font-size: 14px;
-	}
-	.sublens {
-		display: flex;
-		gap: 6px;
-		margin: -4px 0 12px;
-	}
-	.sublens button {
-		min-height: 32px;
-		padding: 0 12px;
-		border-radius: 16px;
-		border: 1px solid var(--line);
-		background: none;
-		color: var(--muted);
-		font-size: 13px;
-		cursor: pointer;
-	}
-	.sublens button.on {
-		background: var(--text);
-		border-color: var(--text);
-		color: var(--bg);
 	}
 	.today-top {
 		margin-top: 0;
@@ -1211,21 +1149,6 @@
 		box-shadow: 0 6px 18px rgb(0 0 0 / 0.25);
 		transform: scale(1.02);
 	}
-	.order-btn {
-		min-height: 32px;
-		padding: 0 12px;
-		border-radius: 16px;
-		border: 1px solid var(--line);
-		background: none;
-		color: var(--muted);
-		font-size: 13px;
-		cursor: pointer;
-	}
-	.order-btn.on {
-		background: var(--text);
-		border-color: var(--text);
-		color: var(--bg);
-	}
 	.daycard .dose {
 		margin-top: 3px;
 	}
@@ -1273,6 +1196,9 @@
 		display: block;
 	}
 	.more-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
 		position: absolute;
 		top: 8px;
 		right: 6px;
@@ -1310,13 +1236,59 @@
 		min-height: 36px;
 		justify-content: center;
 	}
-	.settings {
-		display: block;
-		width: fit-content;
-		margin: 28px auto 0;
-		padding: 12px;
+	.weeknav {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin: -4px -8px 8px;
+	}
+	.weeknav .icon {
+		width: 44px;
+		height: 44px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+		background: none;
+		color: var(--text);
+		cursor: pointer;
+	}
+	.weeknav .link {
+		border: none;
+		background: none;
 		color: var(--muted);
 		font-size: 14px;
-		text-decoration: none;
+		min-height: 44px;
+		cursor: pointer;
+	}
+	.lens-label {
+		margin: -4px 0 8px;
+		font-size: 13px;
+		color: var(--muted);
+	}
+	.reorder-hint {
+		position: sticky;
+		top: calc(env(safe-area-inset-top) + 50px);
+		z-index: 4;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		margin: 0 0 10px;
+		padding: 6px 6px 6px 12px;
+		border-radius: 12px;
+		background: var(--text);
+		color: var(--bg);
+		font-size: 14px;
+	}
+	.reorder-hint button {
+		min-height: 36px;
+		padding: 0 14px;
+		border: none;
+		border-radius: 9px;
+		background: var(--bg);
+		color: var(--text);
+		font-weight: 600;
+		cursor: pointer;
 	}
 </style>

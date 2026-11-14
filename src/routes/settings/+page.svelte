@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { page } from '$app/state';
+	import TopBar from '#lib/TopBar.svelte';
+	import { backFrom } from '#lib/back.js';
 	import { colorOf, palette, paletteKeys } from '#lib/palette.js';
 	import type { PageProps } from './$types';
 
@@ -29,10 +32,7 @@
 <svelte:head><title>Настройки · 1%</title></svelte:head>
 
 <main>
-	<header>
-		<a href="/" class="back">‹ Неделя</a>
-		<h1>Настройки</h1>
-	</header>
+	<TopBar title="Настройки" back={backFrom(page.url.searchParams)} />
 
 	{#if form?.error}<p class="error" role="alert">{form.error}</p>{/if}
 
@@ -321,23 +321,7 @@
 	main {
 		max-width: 560px;
 		margin: 0 auto;
-		padding: calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 32px);
-	}
-	header {
-		display: flex;
-		align-items: baseline;
-		gap: 16px;
-	}
-	h1 {
-		font-size: 22px;
-		margin: 8px 0 16px;
-	}
-	.back {
-		color: var(--muted);
-		text-decoration: none;
-		min-height: 44px;
-		display: inline-flex;
-		align-items: center;
+		padding: 0 16px calc(env(safe-area-inset-bottom) + 32px);
 	}
 	h2,
 	.h2 {

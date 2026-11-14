@@ -6,6 +6,10 @@
 	import { groupPractices } from '#lib/groups.js';
 	import type { PlanView, PracticeView, WeekSummary } from '#lib/types.js';
 	import NoteSheet from '#lib/NoteSheet.svelte';
+	import TopBar from '#lib/TopBar.svelte';
+	import { backFrom } from '#lib/back.js';
+	import CalendarPlus from '@lucide/svelte/icons/calendar-plus';
+	import Layers from '@lucide/svelte/icons/layers';
 	import { isEmptyNote, type NoteDoc } from '#lib/note.js';
 	import { enqueueDayNote, flush } from '#lib/store.js';
 
@@ -162,7 +166,17 @@
 		if (ok) done = true;
 	}
 
-	onMount(() => call(null));
+	/** «Новая неделя с нуля» from the menu: clears the plan from today on, after a question. */
+	function fresh() {
+		if (window.confirm('Очистить план этой недели с сегодняшнего дня? Прошедшие дни не изменятся.')) source('empty');
+	}
+
+	onMount(async () => {
+		await call(null);
+		const q = page.url.searchParams;
+		if (q.get('templates')) picker = 'template';
+		if (q.get('fresh')) fresh();
+	});
 
 	const style = (c: string) => `--c-light:${colorOf(c).light};--c-dark:${colorOf(c).dark}`;
 </script>
@@ -170,10 +184,15 @@
 <svelte:head><title>План · 1%</title></svelte:head>
 
 <main>
-	<header>
-		<a href="/" class="back">‹ Неделя</a>
-		<h1>План · {label(days[0])} – {label(days[6])}</h1>
-	</header>
+	<TopBar
+		title="План недели"
+		subtitle="{label(days[0])} – {label(days[6])}"
+		back={backFrom(page.url.searchParams, 'week')}
+		menu={[
+			{ label: 'Шаблоны недели', icon: Layers, onclick: () => (picker = 'template') },
+			{ label: 'Новая неделя с нуля', icon: CalendarPlus, onclick: () => fresh() }
+		]}
+	/>
 
 	{#if error}<p class="error" role="alert">{error}</p>{/if}
 
@@ -314,16 +333,7 @@
 	main {
 		max-width: 560px;
 		margin: 0 auto;
-		padding: calc(env(safe-area-inset-top) + 12px) 12px calc(env(safe-area-inset-bottom) + 32px);
-	}
-	header {
-		display: flex;
-		align-items: baseline;
-		gap: 12px;
-	}
-	h1 {
-		font-size: 18px;
-		margin: 8px 0 8px;
+		padding: 0 12px calc(env(safe-area-inset-bottom) + 32px);
 	}
 	h2 {
 		font-size: 13px;
@@ -332,14 +342,6 @@
 		letter-spacing: 0.04em;
 		color: var(--muted);
 		margin: 20px 0 8px;
-	}
-	.back {
-		color: var(--muted);
-		text-decoration: none;
-		min-height: 44px;
-		display: inline-flex;
-		align-items: center;
-		flex: none;
 	}
 	.muted {
 		color: var(--muted);
