@@ -90,8 +90,11 @@
 	let open = $state<string[]>(read('open-groups', []));
 	function setTab(t: Tab) {
 		tab = t;
-		// the day screen is always about today
-		if (t === 'today' && start !== weekStart(today)) toToday();
+		// the Today tab always comes back to today
+		if (t === 'today') {
+			viewDay = today;
+			if (start !== weekStart(today)) toToday();
+		}
 	}
 	function setLens(l: Lens) {
 		allLens = l;
@@ -114,7 +117,57 @@
 			: groupPractices(practices, lens as Lens)
 	);
 	const summary = $derived(planWeekSummary(practices, days, isPlanned, amountOf));
-	const day = $derived(todayLists(practices, today, isPlanned, amountOf));
+	/** Spec 007 E: Today pages by day — this week and next. */
+	let viewDay = $state(todayStr());
+	const isFutureDay = $derived(viewDay > today);
+	const minDay = $derived(weekStart(today));
+	const maxDay = $derived(addDays(weekStart(today), 13));
+	const day = $derived(todayLists(practices, viewDay, isPlanned, amountOf));
+	function dayName(d: string) {
+		if (d === today) return 'Сегодня';
+		if (d === addDays(today, 1)) return 'Завтра';
+		if (d === addDays(today, -1)) return 'Вчера';
+		return dayTitle(d);
+	}
+	function showDay(d: string) {
+		if (d < minDay || d > maxDay) return;
+		viewDay = d;
+		const s = weekStart(d);
+		if (s !== start) {
+			start = s;
+			week = undefined;
+			load(s);
+		}
+	}
+	// horizontal swipe on the day screen = previous / next day
+	let swipe: { x: number; y: number } | null = null;
+	function swipeStart(e: PointerEvent) {
+		if (reorder || e.pointerType === 'mouse') return;
+		swipe = { x: e.clientX, y: e.clientY };
+	}
+	function swipeEnd(e: PointerEvent) {
+		if (!swipe) return;
+		const dx = e.clientX - swipe.x;
+		const dy = e.clientY - swipe.y;
+		swipe = null;
+		if (Math.abs(dx) > 70 && Math.abs(dy) < 45) showDay(addDays(viewDay, dx < 0 ? 1 : -1));
+	}
+	/** future day: change what is planned for it (today: unchanged rules; past: locked) */
+	async function setPlanned(p: PracticeView, planned: boolean) {
+		if (!planned && dayNoteOf(p.id, viewDay) && !window.confirm(`Убрать «${p.title}» из плана дня? Заметка дня удалится.`)) return;
+		try {
+			const r = await fetch('/api/plan', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ action: 'item', start: weekStart(viewDay), today, practiceId: p.id, date: viewDay, planned })
+			});
+			if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message ?? 'Не сохранилось');
+			sheet = undefined;
+			await load();
+		} catch (e) {
+			problem = (e as Error).message;
+		}
+	}
 	let moreOpen = $state(false);
 
 	// «Порядок» (#9): drag cards by their ≡ handle; the order is the practices' order everywhere.
@@ -169,8 +222,8 @@
 	function cardUp(p: PracticeView) {
 		clearTimeout(timer);
 		if (longPressed || reorder) return;
-		if (byChecklist(p, today)) return openSheet(p, today);
-		mark(p, today, counts(amountOf(p.id, today), p) ? 0 : p.normDose);
+		if (byChecklist(p, viewDay)) return openSheet(p, viewDay);
+		mark(p, viewDay, counts(amountOf(p.id, viewDay), p) ? 0 : p.normDose);
 	}
 	const nOf = (p: PracticeView) => daysWithout(p.lastDone, p.createdOn, today);
 	// Priority is chosen among goals; in the plan view only among goals planned for today.
@@ -331,7 +384,7 @@
 	async function saveDayNote(p: PracticeView, date: string, live: NoteDoc | null) {
 		// notes shown on screen are reactive proxies; the queue (IndexedDB) needs a plain copy
 		const doc = live ? ($state.snapshot(live) as NoteDoc) : null;
-		const edit = { practiceId: p.id, date, note: doc, updatedAt: new Date().toISOString() };
+		const edit = { practiceId: p.id, date, note: doc, updatedAt: new Date().toISOString(), today };
 		if (week?.plan) {
 			const k = `${p.id}|${date}`;
 			if (doc) week.plan.notes = { ...week.plan.notes, [k]: { note: doc, updatedAt: edit.updatedAt } };
@@ -342,7 +395,7 @@
 			await cacheWeek($state.snapshot(week));
 		}
 		await enqueueDayNote(edit);
-		const amount = p.checklistMarks ? checklistAmount(doc, p) : null;
+		const amount = p.checklistMarks && date <= today ? checklistAmount(doc, p) : null;
 		if (amount !== null && amount !== (amountOf(p.id, date) ?? 0)) await mark(p, date, amount);
 		else {
 			queued = await flush();
@@ -395,11 +448,14 @@
 	}
 </script>
 
-<main>
+<main onpointerdown={tab === 'today' ? swipeStart : undefined} onpointerup={tab === 'today' ? swipeEnd : undefined}>
 	{#if tab === 'today'}
 		<TopBar
-			title={dayTitle(today)}
-			subtitle={week && day.planned ? `по плану ${day.plannedDone} из ${day.planned}` : undefined}
+			title={dayName(viewDay)}
+			subtitle={[dayName(viewDay) !== dayTitle(viewDay) ? dayTitle(viewDay) : '', week && day.planned && !isFutureDay ? `по плану ${day.plannedDone} из ${day.planned}` : '']
+				.filter(Boolean)
+				.join(' · ')}
+			below={dayNav}
 			menu={[{ label: 'Изменить план', icon: Pencil, href: `/plan?start=${start}&from=today` }]}
 		>
 			{#snippet actions()}
@@ -543,6 +599,14 @@
 </main>
 <TabBar {tab} onselect={(t) => setTab(t)} />
 
+{#snippet dayNav()}
+	<div class="weeknav">
+		<button class="icon" disabled={viewDay <= minDay} onclick={() => showDay(addDays(viewDay, -1))} aria-label="Предыдущий день"><ChevronLeft size={22} /></button>
+		{#if viewDay !== today}<button class="link" onclick={() => showDay(today)}>Сегодня</button>{:else}<span></span>{/if}
+		<button class="icon" disabled={viewDay >= maxDay} onclick={() => showDay(addDays(viewDay, 1))} aria-label="Следующий день"><ChevronRight size={22} /></button>
+	</div>
+{/snippet}
+
 {#snippet weekNav()}
 	<div class="weeknav">
 		<button class="icon" onclick={() => go(-1)} aria-label="Прошлая неделя"><ChevronLeft size={22} /></button>
@@ -563,9 +627,11 @@
 			amount={amountOf(sp.id, sd)}
 			doc={dayMode ? dayNoteOf(sp.id, sd) : sp.note}
 			noteTitle={dayMode ? 'План дня' : planned ? 'Общая заметка практики' : undefined}
-			showDose={!byChecklist(sp, sd)}
+			showDose={!byChecklist(sp, sd) && sd <= today}
 			switchLabel={dayMode ? 'Общая заметка практики' : planned ? 'План дня' : undefined}
 			onSwitch={planned ? () => (sheet = { pid: sp.id, date: sd, mode: dayMode ? 'practice' : 'day' }) : undefined}
+			extraLabel={planned && sd > today ? 'Убрать из плана дня' : undefined}
+			onExtra={planned && sd > today ? () => setPlanned(sp, false) : undefined}
 			onDose={(a) => mark(sp, sd, a)}
 			onNote={(doc) => (dayMode ? saveDayNote(sp, sd, doc) : saveNote(sp, doc))}
 			onClose={() => (sheet = undefined)}
@@ -575,11 +641,15 @@
 
 {#snippet todayScreen()}
 	{#if day.planned}
-		<p class="priority today-top">
-			{#if day.top}В приоритете: <b>{day.top}</b>{:else}План на сегодня выполнен{/if}
-		</p>
+		{#if viewDay === today}
+			<p class="priority today-top">
+				{#if day.top}В приоритете: <b>{day.top}</b>{:else}План на сегодня выполнен{/if}
+			</p>
+		{:else if isFutureDay}
+			<p class="day-hint">Отмечать можно, когда день наступит. Заметку дня можно писать уже сейчас.</p>
+		{/if}
 	{:else}
-		<p class="empty-day">На сегодня ничего не запланировано</p>
+		<p class="empty-day">На {viewDay === today ? 'сегодня' : 'этот день'} ничего не запланировано</p>
 	{/if}
 
 	{#if day.todo.length}
@@ -604,7 +674,16 @@
 		</ul>
 	{/if}
 
-	{#if day.other.length}
+	{#if isFutureDay && day.other.length}
+		<details class="more" open={!day.planned}>
+			<summary>Добавить в план этого дня <span class="count">{day.other.length}</span></summary>
+			<ul class="addlist">
+				{#each day.other as p (p.id)}
+					<li><button onclick={() => setPlanned(p, true)}>+ {p.title}{#if p.goalTitle !== p.title}<small>{p.goalTitle}</small>{/if}</button></li>
+				{/each}
+			</ul>
+		</details>
+	{:else if day.other.length}
 		<details class="more" open={moreOpen || !day.planned} ontoggle={(e) => (moreOpen = (e.currentTarget as HTMLDetailsElement).open)}>
 			<summary>Сделать что-то ещё <span class="count">{day.other.length}</span></summary>
 			<ul class="cards" class:reorder bind:this={listEls.other}>
@@ -620,8 +699,8 @@
 {/snippet}
 
 {#snippet card(p: PracticeView, bonus: boolean, list: ListName, ids: number[])}
-	{@const dayNote = isPlanned(p.id, today) ? dayNoteOf(p.id, today) : null}
-	{#if dayNote && (p.showNoteFull || byChecklist(p, today))}
+	{@const dayNote = isPlanned(p.id, viewDay) ? dayNoteOf(p.id, viewDay) : null}
+	{#if dayNote && (p.showNoteFull || byChecklist(p, viewDay))}
 		{@render dayCard(p, dayNote, list, ids)}
 	{:else}
 		{@render plainCard(p, bonus, firstLine(dayNote) || firstLine(p.note), list, ids)}
@@ -644,17 +723,18 @@
 {/snippet}
 
 {#snippet dayCard(p: PracticeView, dayNote: NoteDoc, list: ListName, ids: number[])}
-	{@const a = amountOf(p.id, today)}
+	{@const a = amountOf(p.id, viewDay)}
 	{@const dep = depth(a, p)}
-	{@const auto = byChecklist(p, today)}
+	{@const auto = byChecklist(p, viewDay)}
 	{@const st = checklistStats(dayNote)}
 	<div class="card-wrap" data-depth={dep}>
 		<div class="card daycard" class:nobox={auto} data-depth={dep} style={cellStyle(p.color)}>
 			{#if !auto}
 				<button
 					class="box box-btn"
+					disabled={isFutureDay}
 					aria-label="{p.title}: {counts(a, p) ? 'снять отметку' : 'отметить норму'}"
-					onclick={() => mark(p, today, counts(a, p) ? 0 : p.normDose)}
+					onclick={() => mark(p, viewDay, counts(a, p) ? 0 : p.normDose)}
 					>{#if counts(a, p)}<svg viewBox="0 0 12 12"><path d="M2.5 6.2 5 8.6 9.6 3.4" /></svg>{/if}</button
 				>
 			{/if}
@@ -669,20 +749,21 @@
 					<span class="plan-title">План дня</span>
 					<NoteView
 						doc={dayNote}
-						onToggle={(i) => saveDayNote(p, today, toggleTask(dayNote, i))}
-						onOpen={() => openSheet(p, today, 'day')}
+						readonly={isFutureDay}
+						onToggle={(i) => saveDayNote(p, viewDay, toggleTask(dayNote, i))}
+						onOpen={() => openSheet(p, viewDay, 'day')}
 					/>
 				{:else}
-					<button class="cline cline-btn" onclick={() => openSheet(p, today, 'day')}>→ {firstLine(dayNote)}</button>
+					<button class="cline cline-btn" onclick={() => openSheet(p, viewDay, 'day')}>→ {firstLine(dayNote)}</button>
 				{/if}
 			</div>
 		</div>
-		{@render sideButton(p, list, ids, `${p.title}: план дня и заметка`, () => openSheet(p, today, 'day'))}
+		{@render sideButton(p, list, ids, `${p.title}: план дня и заметка`, () => openSheet(p, viewDay, 'day'))}
 	</div>
 {/snippet}
 
 {#snippet plainCard(p: PracticeView, bonus: boolean, line: string, list: ListName, ids: number[])}
-	{@const a = amountOf(p.id, today)}
+	{@const a = amountOf(p.id, viewDay)}
 	{@const dep = depth(a, p)}
 	<div class="card-wrap" data-depth={dep}>
 		<button
@@ -690,7 +771,7 @@
 			data-depth={dep}
 			style={cellStyle(p.color)}
 			aria-label="{p.title}: {a ? `${a} ${p.unit}` : 'не отмечено'}{bonus ? ', бонус' : ''}"
-			onpointerdown={() => down(p, today)}
+			onpointerdown={() => down(p, viewDay)}
 			onpointerup={() => cardUp(p)}
 			onpointerleave={cancel}
 			onpointercancel={cancel}
@@ -704,7 +785,7 @@
 			<span class="dose">{a && !counts(a, p) ? `${a} из ${p.normDose} ${p.unit}` : a ? `${a} ${p.unit}` : doseHint(p)}</span>
 			{#if line}<span class="cnote cline">→ {line}</span>{/if}
 		</button>
-		{@render sideButton(p, list, ids, `${p.title}: доза и заметка`, () => openSheet(p, today))}
+		{@render sideButton(p, list, ids, `${p.title}: доза и заметка`, () => openSheet(p, viewDay))}
 	</div>
 {/snippet}
 
@@ -990,6 +1071,41 @@
 		white-space: nowrap;
 		font-size: 14px;
 		font-weight: 600;
+	}
+	main {
+		touch-action: pan-y;
+	}
+	.day-hint {
+		color: var(--muted);
+		font-size: 14px;
+		margin: 0 0 8px;
+	}
+	.addlist {
+		list-style: none;
+		margin: 6px 0 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.addlist button {
+		width: 100%;
+		min-height: 48px;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 0 14px;
+		border: 1px dashed var(--line);
+		border-radius: 12px;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.addlist small {
+		color: var(--muted);
+		margin-left: auto;
 	}
 	.today-top {
 		margin-top: 0;

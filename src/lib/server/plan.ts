@@ -135,7 +135,9 @@ export function applySource(db: Db, start: DateStr, today: DateStr, source: Plan
  * or from the practices' usual days when there is no last week.
  */
 export function ensureCurrentPlan(db: Db, start: DateStr, today: DateStr): PlanView | null {
-	if (start !== weekStart(today) || planRow(db, start)) return getPlan(db, start);
+	// the current week, and the next one when Today pages into it (Spec 007 E)
+	const current = weekStart(today);
+	if ((start !== current && start !== addDays(current, 7)) || planRow(db, start)) return getPlan(db, start);
 	const source: PlanSource = planRow(db, addDays(start, -7)) ? 'previous' : 'default';
 	// a new week: nothing is past yet except days before today, which stay unplanned
 	applySource(db, start, today, source);
@@ -292,7 +294,14 @@ export function setPlanLimit(db: Db, limit: number | null) {
  * Spec 006: saves the day note of a planned day; the later change wins. Past days may be edited
  * (a late tick is honest). For a practice marked by checklist the day's mark follows the boxes.
  */
-export function setPlanNote(db: Db, practiceId: number, date: DateStr, note: unknown, updatedAt: string): boolean {
+export function setPlanNote(
+	db: Db,
+	practiceId: number,
+	date: DateStr,
+	note: unknown,
+	updatedAt: string,
+	today?: DateStr
+): boolean {
 	if (!isDateStr(date)) throw new InputError('Неверная дата');
 	if (note !== null && !isNoteDoc(note)) throw new InputError('Заметка в неверном формате');
 	if (Number.isNaN(Date.parse(updatedAt))) throw new InputError('Неверное время изменения');
@@ -310,7 +319,8 @@ export function setPlanNote(db: Db, practiceId: number, date: DateStr, note: unk
 	db.transaction((tx) => {
 		tx.update(planItems).set({ note: json, noteUpdatedAt: updatedAt }).where(eq(planItems.id, item.id)).run();
 		const p = tx.select().from(practices).where(eq(practices.id, practiceId)).get();
-		if (p?.checklistMarks) {
+		// a day that has not come yet gets no mark (Spec 007 E), even if boxes were ticked in the editor
+		if (p?.checklistMarks && !(today && date > today)) {
 			const amount = checklistAmount(empty ? null : doc, p);
 			if (amount !== null) setEntry(tx as unknown as Db, practiceId, date, amount);
 		}

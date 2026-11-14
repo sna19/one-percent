@@ -228,3 +228,29 @@ describe('week templates (Spec 007 D)', () => {
 		expect(() => confirmPlan(db, W2, undefined, 999)).toThrow(InputError);
 	});
 });
+
+describe('next week draft (Spec 007 E)', () => {
+	it('opening next week makes a draft from this week; weeks further on stay empty', () => {
+		const db = setup();
+		ensureCurrentPlan(db, W1, W1);
+		setPlanItem(db, W1, W1, 1, '2026-11-03', true);
+		const next = ensureCurrentPlan(db, W2, '2026-11-04')!;
+		expect(next.status).toBe('draft');
+		expect(next.items[1]).toEqual(['2026-11-10']);
+		expect(ensureCurrentPlan(db, '2026-11-15', '2026-11-04')).toBeNull();
+	});
+});
+
+describe('future days get no marks (Spec 007 E)', async () => {
+	const { setPlanNote } = await import('./plan.js');
+	const { entries } = await import('./schema.js');
+	it('ticking a future day note does not mark it', () => {
+		const db = setup();
+		db.update(practices).set({ checklistMarks: true }).where(eq(practices.id, 3)).run();
+		applySource(db, W1, W1, 'empty');
+		setPlanItem(db, W1, W1, 3, '2026-11-05', true);
+		const full = { type: 'doc', content: [{ type: 'taskList', content: [{ type: 'taskItem', attrs: { checked: true }, content: [{ type: 'paragraph' }] }] }] };
+		setPlanNote(db, 3, '2026-11-05', full, '2026-11-01T10:00:00.000Z', '2026-11-01');
+		expect(db.select().from(entries).all()).toHaveLength(0);
+	});
+});

@@ -9,8 +9,10 @@
 		doc: NoteDoc;
 		onToggle: (index: number) => void;
 		onOpen: () => void;
+		/** boxes cannot be ticked (a day that has not come yet) */
+		readonly?: boolean;
 	}
-	let { doc, onToggle, onOpen }: Props = $props();
+	let { doc, onToggle, onOpen, readonly = false }: Props = $props();
 
 	// document-order index of each checklist item, for onToggle
 	const taskIndex = $derived.by(() => {
@@ -53,6 +55,7 @@
 						class:on={done}
 						role="checkbox"
 						aria-checked={done}
+						disabled={readonly}
 						aria-label="{done ? 'Сделано' : 'Не сделано'}: {(li.content ?? [])
 							.map((c) => (c.content ?? []).map((t) => t.text ?? '').join(''))
 							.join(' ')}"
@@ -140,6 +143,10 @@
 		content: '';
 		position: absolute;
 		inset: -10px;
+	}
+	.tick:disabled {
+		opacity: 0.45;
+		cursor: default;
 	}
 	.tick svg {
 		width: 14px;

@@ -9,7 +9,7 @@ export async function PUT({ request }) {
 	if (!b || !Number.isInteger(b.practiceId) || typeof b.date !== 'string' || typeof b.updatedAt !== 'string')
 		error(400, 'expected { practiceId, date, note, updatedAt }');
 	try {
-		return json({ ok: true, saved: setPlanNote(getDb(), b.practiceId, b.date, b.note ?? null, b.updatedAt) });
+		return json({ ok: true, saved: setPlanNote(getDb(), b.practiceId, b.date, b.note ?? null, b.updatedAt, typeof b.today === 'string' ? b.today : undefined) });
 	} catch (e) {
 		if (e instanceof InputError) error(400, e.message);
 		throw e;

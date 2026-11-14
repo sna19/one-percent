@@ -24,6 +24,8 @@ export const enqueueNote = (n: NoteEdit) => set(n.practiceId, n, notesQueue);
 const dayNotesQueue = createStore('one-percent-day-notes', 'notes');
 export interface DayNoteEdit extends NoteEdit {
 	date: string;
+	/** the device's today when edited: the server makes no marks for later days */
+	today?: string;
 }
 export const enqueueDayNote = (n: DayNoteEdit) => set(`${n.practiceId}|${n.date}`, n, dayNotesQueue);
 export const pendingDayNotes = async (): Promise<DayNoteEdit[]> =>
