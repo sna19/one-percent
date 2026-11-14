@@ -9,6 +9,11 @@ export interface PracticeView {
 	color: string;
 	goalId: number;
 	goalTitle: string;
+	/** for the tree in «Сделать что-то ещё» (#12): the goal's and category's place in the settings order */
+	goalOrder: number;
+	categoryId: number;
+	categoryName: string;
+	categoryOrder: number;
 	/** null when the practice has no format or its format is archived. */
 	formatId: number | null;
 	formatName: string | null;

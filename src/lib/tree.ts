@@ -9,17 +9,45 @@ export interface TreePractice {
 	minDose: number;
 	normDose: number;
 }
-export interface TreeGoal {
+/** P — what a practice row carries: the settings row, or the Today view (#12). */
+export interface TreeGoal<P = TreePractice> {
 	id: number;
 	title: string;
 	categoryId: number;
-	practices: TreePractice[];
+	practices: P[];
 }
-export interface TreeCategory {
+export interface TreeCategory<P = TreePractice> {
 	id: number;
 	name: string;
 	color: string;
-	goals: TreeGoal[];
+	goals: TreeGoal<P>[];
+}
+
+/**
+ * #12 — the same tree for «Сделать что-то ещё», built from the practices left in that list (already in
+ * the common order): categories and goals in their settings order; a goal or category with nothing in
+ * it is not there at all.
+ */
+export function treeOfPractices<
+	P extends { goalId: number; goalTitle: string; goalOrder: number; categoryId: number; categoryName: string; categoryOrder: number; color: string }
+>(ps: P[]): TreeCategory<P>[] {
+	const cats = new Map<number, TreeCategory<P> & { order: number }>();
+	const goalsById = new Map<number, TreeGoal<P> & { order: number }>();
+	for (const p of ps) {
+		let c = cats.get(p.categoryId);
+		if (!c) cats.set(p.categoryId, (c = { id: p.categoryId, name: p.categoryName, color: p.color, goals: [], order: p.categoryOrder }));
+		let g = goalsById.get(p.goalId);
+		if (!g) {
+			goalsById.set(p.goalId, (g = { id: p.goalId, title: p.goalTitle, categoryId: p.categoryId, practices: [], order: p.goalOrder }));
+			c.goals.push(g);
+		}
+		g.practices.push(p);
+	}
+	const byOrder = (a: { order: number; id: number }, b: { order: number; id: number }) => a.order - b.order || a.id - b.id;
+	return [...cats.values()].sort(byOrder).map(({ order: _, ...c }) => ({
+		...c,
+		goals: (c.goals as (TreeGoal<P> & { order: number })[]).sort(byOrder).map(({ order: _o, ...g }) => g)
+	}));
 }
 
 interface Row {

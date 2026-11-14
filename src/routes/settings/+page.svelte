@@ -2,6 +2,7 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import TopBar from '#lib/TopBar.svelte';
+	import Tree from '#lib/Tree.svelte';
 	import { backFrom } from '#lib/back.js';
 	import { colorOf } from '#lib/palette.js';
 	import { buildTree, goalOrder, moveGoal, movePractice, practiceOrder, type TreeCategory } from '#lib/tree.js';
@@ -12,7 +13,6 @@
 	import History from '@lucide/svelte/icons/history';
 	import ChevronsDownUp from '@lucide/svelte/icons/chevrons-down-up';
 	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
-	import { onMount } from 'svelte';
 	import type { PageProps } from './$types';
 
 	/** Spec 007 C — settings as a tree: category → goal → practice; each item edits on its own screen. */
@@ -23,45 +23,8 @@
 	const tree = $derived(preview ?? base);
 	const formatName = (id: number | null) => data.formats.find((f) => f.id === id && !f.archivedAt)?.name;
 
-	// Collapsed categories and goals — remembered on this device (Spec 007 C addendum).
-	const KEY = 'settings-tree-collapsed';
-	let collapsed = $state<number[]>([]);
-	let collapsedCats = $state<number[]>([]);
-	onMount(() => {
-		try {
-			const v = JSON.parse(localStorage.getItem(KEY) ?? 'null');
-			if (Array.isArray(v?.goals)) collapsed = v.goals.filter(Number.isInteger);
-			if (Array.isArray(v?.cats)) collapsedCats = v.cats.filter(Number.isInteger);
-		} catch {
-			/* private mode or bad data: start expanded */
-		}
-	});
-	function remember() {
-		try {
-			localStorage.setItem(KEY, JSON.stringify({ goals: collapsed, cats: collapsedCats }));
-		} catch {
-			/* not critical */
-		}
-	}
-	const flip = (list: number[], id: number) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
-	function toggleGoal(id: number) {
-		collapsed = flip(collapsed, id);
-		remember();
-	}
-	function toggleCat(id: number) {
-		collapsedCats = flip(collapsedCats, id);
-		remember();
-	}
-	function collapseAll() {
-		collapsedCats = base.map((c) => c.id);
-		collapsed = base.flatMap((c) => c.goals.map((g) => g.id));
-		remember();
-	}
-	function expandAll() {
-		collapsedCats = [];
-		collapsed = [];
-		remember();
-	}
+	// The tree folds and remembers it itself (Tree.svelte); the menu calls into it.
+	let treeComp = $state<{ collapseAll: () => void; expandAll: () => void }>();
 
 	let error = $state<string | undefined>();
 	let addOpen = $state(false);
@@ -95,7 +58,7 @@
 	}
 
 	// ── drag inside the tree (≡ handles): order, and moving into another goal or category ──
-	let treeEl: HTMLElement;
+	let treeEl = $state<HTMLElement>();
 	let dragging = $state<{ kind: 'practice' | 'goal'; id: number } | null>(null);
 	let startTree: TreeCategory[] = [];
 
@@ -115,7 +78,7 @@
 		if (!dragging || !preview) return;
 		const d = dragging;
 		const sel = d.kind === 'practice' ? '[data-row=goal],[data-row=practice]' : '[data-row=category],[data-row=goal]';
-		const rows = [...treeEl.querySelectorAll<HTMLElement>(sel)].filter(
+		const rows = [...treeEl!.querySelectorAll<HTMLElement>(sel)].filter(
 			(r) => !(r.dataset.row === d.kind && Number(r.dataset.id) === d.id)
 		);
 		const above = rows.filter((r) => {
@@ -180,8 +143,8 @@
 		title="Настройки"
 		back={backFrom(page.url.searchParams)}
 		menu={[
-			{ label: 'Свернуть всё', icon: ChevronsDownUp, onclick: collapseAll },
-			{ label: 'Развернуть всё', icon: ChevronsUpDown, onclick: expandAll },
+			{ label: 'Свернуть всё', icon: ChevronsDownUp, onclick: () => treeComp?.collapseAll() },
+			{ label: 'Развернуть всё', icon: ChevronsUpDown, onclick: () => treeComp?.expandAll() },
 			{ label: 'Архив', icon: Archive, href: '/settings/archive' },
 			{ label: 'Старые настройки', icon: History, href: '/settings/legacy' }
 		]}
@@ -205,50 +168,32 @@
 
 	{#if error}<p class="error" role="alert">{error}</p>{/if}
 
-	<div class="tree" bind:this={treeEl} class:sorting={!!dragging}>
-		{#each tree as c (c.id)}
-			{@const catOpen = !collapsedCats.includes(c.id)}
-			<section>
-				<h2 data-row="category" data-cat={c.id}>
-					<button class="cat-toggle" aria-expanded={catOpen} aria-label="{c.name}: {catOpen ? 'свернуть' : 'развернуть'}" onclick={() => toggleCat(c.id)}>
-						<span class="chev" class:open={catOpen}><ChevronRight size={16} /></span>
-						<span class="dot" style="--c:{colorOf(c.color).light}"></span>{c.name}
-						{#if !catOpen}<span class="count">{c.goals.length}</span>{/if}
-					</button>
-				</h2>
-				{#if catOpen}
-				<ul class="goals">
-					{#each c.goals as g (g.id)}
-						{@const open = !collapsed.includes(g.id)}
-						<li class="goal" class:dragging={dragging?.kind === 'goal' && dragging.id === g.id}>
-							<div class="goal-row" data-row="goal" data-id={g.id} data-goal={g.id} data-cat={c.id}>
-								<button class="chev" class:open aria-label="{g.title}: {open ? 'свернуть' : 'развернуть'}" aria-expanded={open} onclick={() => toggleGoal(g.id)}><ChevronRight size={18} /></button>
-								<a class="goal-link" href="/settings/goal/{g.id}">{g.title}</a>
-								<span class="count">{g.practices.length}</span>
-								<button class="handle" aria-label="{g.title}: перетащить" title="Перетащить" onpointerdown={(e) => down(e, 'goal', g.id)}><GripVertical size={20} /></button>
-							</div>
-							{#if open}
-								<ul class="practices">
-									{#each g.practices as p (p.id)}
-										<li class="practice" class:dragging={dragging?.kind === 'practice' && dragging.id === p.id} data-row="practice" data-id={p.id} data-goal={g.id} data-cat={c.id}>
-											<a href="/settings/practice/{p.id}">
-												<span class="ptitle">{p.title}</span>
-												<span class="meta">{[formatName(p.formatId), dose(p)].filter(Boolean).join(' · ')}</span>
-											</a>
-											<button class="handle" aria-label="{p.title}: перетащить" title="Перетащить" onpointerdown={(e) => down(e, 'practice', p.id)}><GripVertical size={20} /></button>
-										</li>
-									{/each}
-									<li class="add"><button onclick={() => newPractice(g.id)}><Plus size={16} /> Практика</button></li>
-								</ul>
-							{/if}
-						</li>
-					{/each}
-					<li class="add"><button onclick={() => newGoal(c.id)}><Plus size={16} /> Цель</button></li>
-				</ul>
-				{/if}
-			</section>
-		{/each}
-	</div>
+	<Tree
+		bind:this={treeComp}
+		bind:root={treeEl}
+		{tree}
+		storageKey="settings-tree-collapsed"
+		boxed
+		{dragging}
+		goalHref={(g) => `/settings/goal/${g.id}`}
+	>
+		{#snippet goalExtra(g)}
+			<button class="handle" aria-label="{g.title}: перетащить" title="Перетащить" onpointerdown={(e) => down(e, 'goal', g.id)}><GripVertical size={20} /></button>
+		{/snippet}
+		{#snippet practice(p)}
+			<a class="prow" href="/settings/practice/{p.id}">
+				<span class="ptitle">{p.title}</span>
+				<span class="meta">{[formatName(p.formatId), dose(p)].filter(Boolean).join(' · ')}</span>
+			</a>
+			<button class="handle" aria-label="{p.title}: перетащить" title="Перетащить" onpointerdown={(e) => down(e, 'practice', p.id)}><GripVertical size={20} /></button>
+		{/snippet}
+		{#snippet afterPractices(g)}
+			<button class="add add-practice" onclick={() => newPractice(g.id)}><Plus size={16} /> Практика</button>
+		{/snippet}
+		{#snippet afterGoals(c)}
+			<button class="add" onclick={() => newGoal(c.id)}><Plus size={16} /> Цель</button>
+		{/snippet}
+	</Tree>
 
 	<h2 class="refs-title">Справочники</h2>
 	<ul class="refs">
@@ -277,93 +222,12 @@
 		color: var(--muted);
 		margin: 22px 0 8px;
 	}
-	.cat-toggle {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		width: 100%;
-		min-height: 44px;
-		margin: -6px 0;
-		padding: 0;
-		border: none;
-		background: none;
-		font: inherit;
-		color: inherit;
-		text-transform: inherit;
-		letter-spacing: inherit;
-		text-align: left;
-		cursor: pointer;
-	}
-	.cat-toggle .chev {
-		width: auto;
-		height: auto;
-	}
-	.cat-toggle .count {
-		margin-left: auto;
-		text-transform: none;
-	}
-	.dot {
-		width: 12px;
-		height: 12px;
-		border-radius: 4px;
-		background: var(--c);
-	}
 	ul {
 		list-style: none;
 		margin: 0;
 		padding: 0;
 	}
-	.goals {
-		background: var(--surface);
-		border-radius: 12px;
-		overflow: hidden;
-	}
-	.goals > li + li {
-		border-top: 1px solid var(--line);
-	}
-	.goal-row {
-		display: flex;
-		align-items: center;
-		min-height: 48px;
-		padding-left: 4px;
-	}
-	.chev {
-		width: 36px;
-		height: 44px;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		border: none;
-		background: none;
-		color: var(--muted);
-		cursor: pointer;
-		transition: transform 0.15s;
-	}
-	.chev.open {
-		transform: rotate(90deg);
-	}
-	.goal-link {
-		flex: 1;
-		min-width: 0;
-		padding: 12px 0;
-		color: var(--text);
-		text-decoration: none;
-		font-weight: 600;
-	}
-	.count {
-		color: var(--muted);
-		font-size: 13px;
-		margin-right: 4px;
-	}
-	.practices {
-		padding-left: 36px;
-	}
-	.practice {
-		display: flex;
-		align-items: center;
-		border-top: 1px solid var(--line);
-	}
-	.practice a {
+	.prow {
 		flex: 1;
 		min-width: 0;
 		display: flex;
@@ -392,7 +256,7 @@
 		touch-action: none;
 		cursor: grab;
 	}
-	.add button {
+	.add {
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
@@ -405,21 +269,8 @@
 		font-size: 15px;
 		cursor: pointer;
 	}
-	.practices .add {
-		border-top: 1px solid var(--line);
-	}
-	.practices .add button {
+	.add-practice {
 		padding-left: 0;
-	}
-	li.dragging {
-		background: var(--bg);
-		box-shadow: 0 6px 18px rgb(0 0 0 / 0.18);
-		position: relative;
-		z-index: 1;
-	}
-	.tree.sorting {
-		user-select: none;
-		-webkit-user-select: none;
 	}
 	.refs-title {
 		margin-top: 30px;

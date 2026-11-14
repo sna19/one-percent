@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildTree, goalOrder, moveGoal, movePractice, practiceOrder } from './tree.js';
+import { buildTree, goalOrder, moveGoal, movePractice, practiceOrder, treeOfPractices } from './tree.js';
 
 const P = (id: number, goalId: number, archivedAt: string | null = null) => ({
 	id, goalId, archivedAt, title: `p${id}`, formatId: null, unit: 'мин', minDose: 1, normDose: 2
@@ -28,5 +28,26 @@ describe('settings tree', () => {
 		expect(goalOrder(t)).toEqual([10, 11, 12]);
 		expect(t[1].goals.map((g) => g.id)).toEqual([11, 12]);
 		expect(practiceOrder(t)).toEqual([1, 2, 3, 4, 5]);
+	});
+});
+
+describe('treeOfPractices (#12)', () => {
+	const pv = (id: number, goalId: number, goalOrder: number, categoryId: number, categoryOrder: number) => ({
+		id,
+		goalId,
+		goalTitle: `g${goalId}`,
+		goalOrder,
+		categoryId,
+		categoryName: `c${categoryId}`,
+		categoryOrder,
+		color: 'blue'
+	});
+	it('groups by category and goal in their own order; practices keep the given order', () => {
+		const t = treeOfPractices([pv(1, 20, 2, 2, 1), pv(2, 10, 1, 1, 0), pv(3, 20, 2, 2, 1), pv(4, 30, 0, 2, 1)]);
+		expect(t.map((c) => [c.id, c.goals.map((g) => [g.id, g.practices.map((p) => p.id)])])).toEqual([
+			[1, [[10, [2]]]],
+			[2, [[30, [4]], [20, [1, 3]]]]
+		]);
+		expect(treeOfPractices([])).toEqual([]);
 	});
 });

@@ -33,6 +33,8 @@
 	import Star from '@lucide/svelte/icons/star';
 	import FilePen from '@lucide/svelte/icons/file-pen';
 	import NoteHead from '#lib/NoteHead.svelte';
+	import Tree from '#lib/Tree.svelte';
+	import { treeOfPractices } from '#lib/tree.js';
 	import DayIcon from '#lib/DayIcon.svelte';
 	import NoteView from '#lib/NoteView.svelte';
 	import { checklistAmount, checklistStats, firstBlockDoc, firstLine, toggleTask, type NoteDoc } from '#lib/note.js';
@@ -127,6 +129,9 @@
 	const minDay = $derived(weekStart(today));
 	const maxDay = $derived(addDays(weekStart(today), 13));
 	const day = $derived(todayLists(practices, viewDay, isPlanned, amountOf));
+	// #12: «Сделать что-то ещё» — recommended first as their own list, the rest as the settings tree
+	const recommended = $derived(day.other.filter((p) => p.recommended));
+	const otherTree = $derived(treeOfPractices(day.other.filter((p) => !p.recommended)));
 	function dayName(d: string) {
 		if (d === today) return 'Сегодня';
 		if (d === addDays(today, 1)) return 'Завтра';
@@ -204,7 +209,8 @@
 	}
 
 	// «Порядок» (#9): drag cards by their ≡ handle; the order is the practices' order everywhere.
-	type ListName = 'todo' | 'done' | 'other';
+	/** 'tree' — a card in the tree of «Сделать что-то ещё»: its order comes from settings, no drag here */
+	type ListName = 'todo' | 'done' | 'other' | 'tree';
 	let reorder = $state(false);
 	let drag = $state<{ list: ListName; id: number; ids: number[] } | undefined>();
 	const listEls: Partial<Record<ListName, HTMLUListElement>> = {};
@@ -719,13 +725,26 @@
 	{:else if day.other.length}
 		<details class="more" open={moreOpen || !day.planned} ontoggle={(e) => (moreOpen = (e.currentTarget as HTMLDetailsElement).open)}>
 			<summary>Сделать что-то ещё <span class="count">{otherCount(day.other)}</span></summary>
-			<ul class="cards" class:reorder bind:this={listEls.other}>
-				{#each inOrder('other', day.other, (p) => p.id) as p (p.id)}
-					<li data-id={p.id} class:dragging={drag?.id === p.id} in:receive={{ key: p.id }} out:send={{ key: p.id }} animate:flip={{ duration: 180 }}>
-						{@render card(p, false, 'other', day.other.map((x) => x.id))}
-					</li>
-				{/each}
-			</ul>
+			<!-- #12: recommended on top as a flat list (they can be reordered); the rest as the settings tree -->
+			{#if recommended.length}
+				<h3 class="sub-title">Рекомендованные</h3>
+				<ul class="cards" class:reorder bind:this={listEls.other}>
+					{#each inOrder('other', recommended, (p) => p.id) as p (p.id)}
+						<li data-id={p.id} class:dragging={drag?.id === p.id} in:receive={{ key: p.id }} out:send={{ key: p.id }} animate:flip={{ duration: 180 }}>
+							{@render card(p, false, 'other', recommended.map((x) => x.id))}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+			{#if otherTree.length}
+				<div class="other-tree">
+					<Tree tree={otherTree} storageKey="today-tree-collapsed">
+						{#snippet practice(p)}
+							{@render card(p, false, 'tree', [])}
+						{/snippet}
+					</Tree>
+				</div>
+			{/if}
 		</details>
 	{/if}
 
@@ -749,7 +768,7 @@
 		<div
 			class="card"
 			class:nobox={auto}
-			class:has-star={list === 'other'}
+			class:has-star={list === 'other' || list === 'tree'}
 			class:open={isOpen}
 			data-depth={dep}
 			style={cellStyle(p.color)}
@@ -779,9 +798,9 @@
 				}}
 			>
 				<span class="ctitle">{p.title}{#if bonus}<span class="tag">бонус</span>{/if}</span>
-				{#if p.goalTitle !== p.title}<small>{p.goalTitle}</small>{/if}
+				{#if p.goalTitle !== p.title && list !== 'tree'}<small>{p.goalTitle}</small>{/if}
 			</button>
-			{#if list === 'other'}{@render star(p)}{/if}
+			{#if list === 'other' || list === 'tree'}{@render star(p)}{/if}
 			<span class="dose" class:count={auto}
 				>{auto ? `${st.checked} из ${st.total}` : a && !counts(a, p) ? `${a} из ${p.normDose} ${p.unit}` : a ? `${a} ${p.unit}` : doseHint(p)}</span
 			>
@@ -874,7 +893,7 @@
 {/snippet}
 
 {#snippet sideButton(p: PracticeView, list: ListName, ids: number[], label: string, open: () => void)}
-	{#if reorder}
+	{#if reorder && list !== 'tree'}
 		<button
 			class="more-btn handle"
 			aria-label="{p.title}: перетащить"
@@ -1505,6 +1524,18 @@
 	}
 	.actions .star:not(.on) {
 		color: var(--fg);
+	}
+	/* #12: the sections of «Сделать что-то ещё» */
+	.sub-title {
+		margin: 14px 0 6px;
+		font-size: 13px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--muted);
+	}
+	.other-tree :global(h2) {
+		margin-top: 16px;
 	}
 	.more-btn {
 		display: inline-flex;
