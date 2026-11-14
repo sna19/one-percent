@@ -127,3 +127,21 @@ describe('setOrder for every list', () => {
 		expect(() => setOrder(db, 'entry', [1])).toThrow(InputError);
 	});
 });
+
+describe('settings tree', async () => {
+	const { createPractice, createGoal, applyTreeDrop } = await import('./settings.js');
+	it('creates in place and moves between parents', () => {
+		const db = setup();
+		const pid = createPractice(db, 2);
+		expect(loadSettings(db).practices.find((p) => p.id === pid)?.goalId).toBe(2);
+		const gid = createGoal(db, 2);
+		expect(loadSettings(db).goals.find((g) => g.id === gid)?.categoryId).toBe(2);
+		applyTreeDrop(db, { practiceGoal: { id: 3, goalId: 4 }, practiceOrder: [4, 3, 1, 2, pid] });
+		const ps = loadSettings(db).practices;
+		expect(ps.find((p) => p.id === 3)?.goalId).toBe(4);
+		expect(ps.map((p) => p.id)).toEqual([4, 3, 1, 2, pid]);
+		applyTreeDrop(db, { goalCategory: { id: 1, categoryId: 2 } });
+		expect(loadSettings(db).goals.find((g) => g.id === 1)?.categoryId).toBe(2);
+		expect(() => createPractice(db, 99)).toThrow(InputError);
+	});
+});

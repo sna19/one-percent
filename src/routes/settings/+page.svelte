@@ -1,332 +1,214 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import TopBar from '#lib/TopBar.svelte';
 	import { backFrom } from '#lib/back.js';
-	import { invalidateAll } from '$app/navigation';
+	import { colorOf } from '#lib/palette.js';
+	import { buildTree, goalOrder, moveGoal, movePractice, practiceOrder, type TreeCategory } from '#lib/tree.js';
+	import Plus from '@lucide/svelte/icons/plus';
 	import GripVertical from '@lucide/svelte/icons/grip-vertical';
-	import { inPreview, saveOrder, sortable } from '#lib/sortable.js';
-	import { colorOf, palette, paletteKeys } from '#lib/palette.js';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import Archive from '@lucide/svelte/icons/archive';
+	import History from '@lucide/svelte/icons/history';
 	import type { PageProps } from './$types';
 
-	let { data, form }: PageProps = $props();
+	/** Spec 007 C — settings as a tree: category → goal → practice; each item edits on its own screen. */
+	let { data }: PageProps = $props();
 
-	// Spec 007 B: every list sorts by dragging its ≡ handle
-	type Kind = 'practice' | 'goal' | 'category' | 'format' | 'template';
-	let preview = $state<Partial<Record<Kind, number[] | null>>>({});
-	let orderError = $state<string | undefined>();
-	const drag = (kind: Kind) => ({
-		preview: (ids: number[] | null) => (preview[kind] = ids),
-		drop: async (ids: number[]) => {
-			preview[kind] = ids;
-			try {
-				await saveOrder(kind, ids);
-				orderError = undefined;
-			} catch {
-				orderError = 'Порядок не сохранился: нет связи с сервером';
-			}
-			await invalidateAll();
-			preview[kind] = null;
+	const base = $derived(buildTree(data.categories, data.goals, data.practices));
+	let preview = $state<TreeCategory[] | null>(null);
+	const tree = $derived(preview ?? base);
+	const formatName = (id: number | null) => data.formats.find((f) => f.id === id && !f.archivedAt)?.name;
+
+	let collapsed = $state<number[]>([]);
+	const toggleGoal = (id: number) =>
+		(collapsed = collapsed.includes(id) ? collapsed.filter((x) => x !== id) : [...collapsed, id]);
+
+	let error = $state<string | undefined>();
+	let addOpen = $state(false);
+
+	async function api(action: string, body: object) {
+		const r = await fetch(`/api/settings/${action}`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(body)
+		});
+		const j = await r.json().catch(() => ({}));
+		if (!r.ok) throw new Error(j.message ?? 'Не сохранилось');
+		return j;
+	}
+
+	async function newPractice(goalId: number) {
+		try {
+			const { id } = await api('newPractice', { goalId });
+			goto(`/settings/practice/${id}?new=1`);
+		} catch (e) {
+			error = (e as Error).message;
 		}
-	});
+	}
+	async function newGoal(categoryId: number) {
+		try {
+			const { id } = await api('newGoal', { categoryId });
+			goto(`/settings/goal/${id}?new=1`);
+		} catch (e) {
+			error = (e as Error).message;
+		}
+	}
 
-	const active = <T extends { archivedAt: string | null }>(xs: T[]) => xs.filter((x) => !x.archivedAt);
-	const archived = $derived([
-		...data.categories.filter((c) => c.archivedAt).map((c) => ({ kind: 'category', id: c.id, title: c.name, what: 'категория' })),
-		...data.goals.filter((g) => g.archivedAt).map((g) => ({ kind: 'goal', id: g.id, title: g.title, what: 'цель' })),
-		...data.practices.filter((p) => p.archivedAt).map((p) => ({ kind: 'practice', id: p.id, title: p.title, what: 'практика' })),
-		...data.formats.filter((f) => f.archivedAt).map((f) => ({ kind: 'format', id: f.id, title: f.name, what: 'формат' })),
-		...data.templates.filter((t) => t.archivedAt).map((t) => ({ kind: 'template', id: t.id, title: t.name, what: 'шаблон плана' }))
-	]);
-	const catName = (id: number) => data.categories.find((c) => c.id === id)?.name ?? '—';
-	const goalTitle = (id: number) => data.goals.find((g) => g.id === id)?.title ?? '—';
-	const catOfGoal = (id: number) => data.categories.find((c) => c.id === data.goals.find((g) => g.id === id)?.categoryId);
+	// ── drag inside the tree (≡ handles): order, and moving into another goal or category ──
+	let treeEl: HTMLElement;
+	let dragging = $state<{ kind: 'practice' | 'goal'; id: number } | null>(null);
+	let startTree: TreeCategory[] = [];
 
-	// Close the open <details> after a successful save.
-	const save = () => {
-		return async ({ result, update, formElement }: any) => {
-			await update({ reset: false });
-			if (result.type === 'success') formElement.closest('details')?.removeAttribute('open');
-		};
-	};
+	// The dragged row may be re-created in another goal or category, so the move/up listeners
+	// live on window for the duration of the drag (a handle's pointer capture would be lost).
+	function down(e: PointerEvent, kind: 'practice' | 'goal', id: number) {
+		e.preventDefault();
+		dragging = { kind, id };
+		startTree = base;
+		preview = base;
+		window.addEventListener('pointermove', move);
+		window.addEventListener('pointerup', up);
+		window.addEventListener('pointercancel', up);
+	}
+
+	function move(e: PointerEvent) {
+		if (!dragging || !preview) return;
+		const d = dragging;
+		const sel = d.kind === 'practice' ? '[data-row=goal],[data-row=practice]' : '[data-row=category],[data-row=goal]';
+		const rows = [...treeEl.querySelectorAll<HTMLElement>(sel)].filter(
+			(r) => !(r.dataset.row === d.kind && Number(r.dataset.id) === d.id)
+		);
+		const above = rows.filter((r) => {
+			const b = r.getBoundingClientRect();
+			return b.top + b.height / 2 < e.clientY;
+		});
+		const last = above.at(-1);
+		let next = preview;
+		if (d.kind === 'practice') {
+			const goalId = last ? Number(last.dataset.goal) : preview.find((c) => c.goals.length)?.goals[0].id;
+			if (goalId === undefined) return;
+			const index = !last || last.dataset.row === 'goal' ? 0 : above.filter((r) => r.dataset.row === 'practice' && Number(r.dataset.goal) === goalId).length;
+			next = movePractice(preview, d.id, goalId, index);
+		} else {
+			const catId = last ? Number(last.dataset.cat) : preview[0]?.id;
+			if (catId === undefined) return;
+			const index = !last || last.dataset.row === 'category' ? 0 : above.filter((r) => r.dataset.row === 'goal' && Number(r.dataset.cat) === catId).length;
+			next = moveGoal(preview, d.id, catId, index);
+		}
+		if (JSON.stringify(next) !== JSON.stringify(preview)) preview = next;
+	}
+
+	async function up() {
+		window.removeEventListener('pointermove', move);
+		window.removeEventListener('pointerup', up);
+		window.removeEventListener('pointercancel', up);
+		if (!dragging || !preview) return;
+		const d = dragging;
+		const final = preview;
+		dragging = null;
+		const body: Record<string, unknown> = { practiceOrder: practiceOrder(final), goalOrder: goalOrder(final) };
+		if (d.kind === 'practice') {
+			const goalId = final.flatMap((c) => c.goals).find((g) => g.practices.some((p) => p.id === d.id))?.id;
+			const was = startTree.flatMap((c) => c.goals).find((g) => g.practices.some((p) => p.id === d.id))?.id;
+			if (goalId !== undefined && goalId !== was) body.practiceGoal = { id: d.id, goalId };
+		} else {
+			const catId = final.find((c) => c.goals.some((g) => g.id === d.id))?.id;
+			const was = startTree.find((c) => c.goals.some((g) => g.id === d.id))?.id;
+			if (catId !== undefined && catId !== was) body.goalCategory = { id: d.id, categoryId: catId };
+		}
+		try {
+			if (JSON.stringify(final) !== JSON.stringify(startTree)) await api('tree', body);
+			error = undefined;
+		} catch (e) {
+			error = (e as Error).message;
+		}
+		await invalidateAll();
+		preview = null;
+	}
+
+	const dose = (p: { minDose: number; normDose: number; unit: string }) =>
+		p.minDose === p.normDose ? `${p.normDose} ${p.unit}` : `${p.minDose} / ${p.normDose} ${p.unit}`;
+	const archivedCount = $derived(
+		[...data.categories, ...data.goals, ...data.practices, ...data.formats].filter((x) => x.archivedAt).length
+	);
 </script>
 
 <svelte:head><title>Настройки · 1%</title></svelte:head>
 
 <main>
-	<TopBar title="Настройки" back={backFrom(page.url.searchParams)} />
+	<TopBar
+		title="Настройки"
+		back={backFrom(page.url.searchParams)}
+		menu={[
+			{ label: 'Архив', icon: Archive, href: '/settings/archive' },
+			{ label: 'Старые настройки', icon: History, href: '/settings/legacy' }
+		]}
+	>
+		{#snippet actions()}
+			<button class="icon" aria-label="Добавить" title="Добавить" aria-haspopup="menu" aria-expanded={addOpen} onclick={() => (addOpen = !addOpen)}
+				><Plus size={22} /></button
+			>
+		{/snippet}
+	</TopBar>
 
-	{#if form?.error}<p class="error" role="alert">{form.error}</p>{/if}
-	{#if orderError}<p class="error" role="alert">{orderError}</p>{/if}
-
-	<section>
-		<h2>Практики</h2>
-		<ul use:sortable={drag('practice')}>
-			{#each inPreview(active(data.practices), preview.practice ?? null, (x) => x.id) as p (p.id)}
-				{@const c = catOfGoal(p.goalId)}
-				<li class="practice" data-id={p.id}>
-					<details>
-						<summary>
-							<span class="dot" style="--c:{colorOf(c?.color ?? 'slate').light}"></span>
-							<span class="title">{p.title}</span>
-							<span class="meta">{p.minDose} / {p.normDose} {p.unit}</span>
-						</summary>
-						<form method="POST" action="?/practice" use:enhance={save}>
-							<input type="hidden" name="id" value={p.id} />
-							{@render practiceFields(p)}
-							<button>Сохранить</button>
-						</form>
-						<div class="row">{@render archiveBtn('practice', p.id)}</div>
-					</details>
-					{@render handle(p.title)}
-				</li>
-			{/each}
-			<li>
-				<details>
-					<summary class="add">+ Практика</summary>
-					<form method="POST" action="?/practice" use:enhance={save}>
-						{@render practiceFields()}
-						<button>Добавить</button>
-					</form>
-				</details>
-			</li>
+	{#if addOpen}
+		<div class="scrim" role="presentation" onclick={() => (addOpen = false)}></div>
+		<ul class="addmenu" role="menu">
+			<li role="none"><button role="menuitem" onclick={() => { addOpen = false; const g = tree.flatMap((c) => c.goals)[0]; if (g) newPractice(g.id); else error = 'Сначала создайте цель'; }}>Практика</button></li>
+			<li role="none"><button role="menuitem" onclick={() => { addOpen = false; if (tree[0]) newGoal(tree[0].id); else error = 'Сначала создайте категорию'; }}>Цель</button></li>
+			<li role="none"><a role="menuitem" href="/settings/categories?new=1">Категория</a></li>
+			<li role="none"><a role="menuitem" href="/settings/formats?new=1">Формат</a></li>
 		</ul>
-	</section>
+	{/if}
 
-	<section>
-		<h2>Цели</h2>
-		<ul use:sortable={drag('goal')}>
-			{#each inPreview(active(data.goals), preview.goal ?? null, (x) => x.id) as g (g.id)}
-				<li class="practice" data-id={g.id}>
-					<details>
-						<summary>
-							<span class="title">{g.title}</span>
-							<span class="meta">{catName(g.categoryId)}</span>
-						</summary>
-						<form method="POST" action="?/goal" use:enhance={save}>
-							<input type="hidden" name="id" value={g.id} />
-							{@render goalFields(g)}
-							<button>Сохранить</button>
-						</form>
-						<div class="row">{@render archiveBtn('goal', g.id)}</div>
-					</details>
-					{@render handle(g.title)}
-				</li>
-			{/each}
-			<li>
-				<details>
-					<summary class="add">+ Цель</summary>
-					<form method="POST" action="?/goal" use:enhance={save}>
-						{@render goalFields()}
-						<button>Добавить</button>
-					</form>
-				</details>
-			</li>
-		</ul>
-	</section>
+	{#if error}<p class="error" role="alert">{error}</p>{/if}
 
-	<section>
-		<h2>План</h2>
-		<ul use:sortable={drag('template')}>
-			<li>
-				<form method="POST" action="?/limit" use:enhance class="limit">
-					<label
-						>Мягкий лимит практик в плане
-						<input name="limit" inputmode="numeric" value={data.planLimit ?? ''} placeholder="без лимита" />
-					</label>
-					<button>Сохранить</button>
-				</form>
-			</li>
-			{#each inPreview(data.templates.filter((t) => !t.archivedAt), preview.template ?? null, (x) => x.id) as t (t.id)}
-				<li class="practice" data-id={t.id}>
-					<details>
-						<summary><span class="title">{t.name}</span><span class="meta">шаблон</span></summary>
-						<form method="POST" action="?/template" use:enhance={save}>
-							<input type="hidden" name="id" value={t.id} />
-							<label>Название <input name="name" value={t.name} required /></label>
-							<button>Сохранить</button>
-						</form>
-						<div class="row">{@render archiveBtn('template', t.id)}</div>
-					</details>
-					{@render handle(t.name)}
-				</li>
-			{/each}
-		</ul>
-		<p class="hint">Шаблоны создаются на экране плана: «Утвердить» → «Сохранить как шаблон».</p>
-	</section>
-
-	<section>
-		<h2>Форматы</h2>
-		<ul use:sortable={drag('format')}>
-			{#each inPreview(active(data.formats), preview.format ?? null, (x) => x.id) as f (f.id)}
-				<li class="practice" data-id={f.id}>
-					<details>
-						<summary>
-							<span class="title">{f.name}</span>
-							<span class="meta">{data.practices.filter((p) => !p.archivedAt && p.formatId === f.id).length}</span>
-						</summary>
-						<form method="POST" action="?/format" use:enhance={save}>
-							<input type="hidden" name="id" value={f.id} />
-							<label>Название <input name="name" value={f.name} required /></label>
-							<button>Сохранить</button>
-						</form>
-						<div class="row">{@render archiveBtn('format', f.id)}</div>
-					</details>
-					{@render handle(f.name)}
-				</li>
-			{/each}
-			<li>
-				<details>
-					<summary class="add">+ Формат</summary>
-					<form method="POST" action="?/format" use:enhance={save}>
-						<label>Название <input name="name" required /></label>
-						<button>Добавить</button>
-					</form>
-				</details>
-			</li>
-		</ul>
-	</section>
-
-	<section>
-		<h2>Категории</h2>
-		<ul use:sortable={drag('category')}>
-			{#each inPreview(active(data.categories), preview.category ?? null, (x) => x.id) as c (c.id)}
-				<li class="practice" data-id={c.id}>
-					<details>
-						<summary>
-							<span class="dot" style="--c:{colorOf(c.color).light}"></span>
-							<span class="title">{c.name}</span>
-						</summary>
-						<form method="POST" action="?/category" use:enhance={save}>
-							<input type="hidden" name="id" value={c.id} />
-							{@render categoryFields(c)}
-							<button>Сохранить</button>
-						</form>
-						<div class="row">{@render archiveBtn('category', c.id)}</div>
-					</details>
-					{@render handle(c.name)}
-				</li>
-			{/each}
-			<li>
-				<details>
-					<summary class="add">+ Категория</summary>
-					<form method="POST" action="?/category" use:enhance={save}>
-						{@render categoryFields()}
-						<button>Добавить</button>
-					</form>
-				</details>
-			</li>
-		</ul>
-	</section>
-
-	{#if archived.length}
-		<section>
-			<details>
-				<summary class="h2">Архив · {archived.length}</summary>
-				<ul>
-					{#each archived as a (a.kind + a.id)}
-						<li class="archived">
-							<span class="title">{a.title}</span>
-							<span class="meta">{a.what}</span>
-							<form method="POST" action="?/restore" use:enhance>
-								<input type="hidden" name="kind" value={a.kind} /><input type="hidden" name="id" value={a.id} />
-								<button>Вернуть</button>
-							</form>
+	<div class="tree" bind:this={treeEl} class:sorting={!!dragging}>
+		{#each tree as c (c.id)}
+			<section>
+				<h2 data-row="category" data-cat={c.id}><span class="dot" style="--c:{colorOf(c.color).light}"></span>{c.name}</h2>
+				<ul class="goals">
+					{#each c.goals as g (g.id)}
+						{@const open = !collapsed.includes(g.id)}
+						<li class="goal" class:dragging={dragging?.kind === 'goal' && dragging.id === g.id}>
+							<div class="goal-row" data-row="goal" data-id={g.id} data-goal={g.id} data-cat={c.id}>
+								<button class="chev" class:open aria-label="{g.title}: {open ? 'свернуть' : 'развернуть'}" aria-expanded={open} onclick={() => toggleGoal(g.id)}><ChevronRight size={18} /></button>
+								<a class="goal-link" href="/settings/goal/{g.id}">{g.title}</a>
+								<span class="count">{g.practices.length}</span>
+								<button class="handle" aria-label="{g.title}: перетащить" title="Перетащить" onpointerdown={(e) => down(e, 'goal', g.id)}><GripVertical size={20} /></button>
+							</div>
+							{#if open}
+								<ul class="practices">
+									{#each g.practices as p (p.id)}
+										<li class="practice" class:dragging={dragging?.kind === 'practice' && dragging.id === p.id} data-row="practice" data-id={p.id} data-goal={g.id} data-cat={c.id}>
+											<a href="/settings/practice/{p.id}">
+												<span class="ptitle">{p.title}</span>
+												<span class="meta">{[formatName(p.formatId), dose(p)].filter(Boolean).join(' · ')}</span>
+											</a>
+											<button class="handle" aria-label="{p.title}: перетащить" title="Перетащить" onpointerdown={(e) => down(e, 'practice', p.id)}><GripVertical size={20} /></button>
+										</li>
+									{/each}
+									<li class="add"><button onclick={() => newPractice(g.id)}><Plus size={16} /> Практика</button></li>
+								</ul>
+							{/if}
 						</li>
 					{/each}
+					<li class="add"><button onclick={() => newGoal(c.id)}><Plus size={16} /> Цель</button></li>
 				</ul>
-			</details>
-		</section>
-	{/if}
-</main>
-
-{#snippet handle(title: string)}
-	<button class="handle" data-handle aria-label="{title}: перетащить" title="Перетащить"><GripVertical size={20} /></button>
-{/snippet}
-
-{#snippet archiveBtn(kind: string, id: number)}
-	<form method="POST" action="?/archive" use:enhance class="push">
-		<input type="hidden" name="kind" value={kind} /><input type="hidden" name="id" value={id} />
-		<button class="quiet">В архив</button>
-	</form>
-{/snippet}
-
-{#snippet practiceFields(p?: (typeof data.practices)[number])}
-	<label>Название <input name="title" value={p?.title ?? ''} required /></label>
-	<label
-		>Цель
-		<select name="goalId" required>
-			{#if !p}<option value="" disabled selected>Выберите цель</option>{/if}
-			{#each data.goals.filter((g) => !g.archivedAt || g.id === p?.goalId) as g (g.id)}
-				<option value={g.id} selected={g.id === p?.goalId}>{g.title}</option>
-			{/each}
-		</select>
-	</label>
-	<label
-		>Формат
-		<select name="formatId">
-			<option value="" selected={!p?.formatId}>Без формата</option>
-			{#each data.formats.filter((f) => !f.archivedAt || f.id === p?.formatId) as f (f.id)}
-				<option value={f.id} selected={f.id === p?.formatId}>{f.name}</option>
-			{/each}
-		</select>
-	</label>
-	<fieldset>
-		<legend>Обычные дни — для планирования</legend>
-		<div class="weekdays">
-			{#each [1, 2, 3, 4, 5, 6, 0] as wd (wd)}
-				<label class="wd">
-					<input type="checkbox" name="defaultDays" value={wd} checked={(p?.defaultDays ?? '').split(',').includes(String(wd))} />
-					<span>{['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'][wd]}</span>
-				</label>
-			{/each}
-		</div>
-	</fieldset>
-	<fieldset>
-		<legend>План дня</legend>
-		<label class="toggle"
-			><input type="checkbox" name="showNoteFull" checked={p?.showNoteFull ?? false} /> Показывать заметку дня целиком</label
-		>
-		<label class="toggle"
-			><input type="checkbox" name="checklistMarks" checked={p?.checklistMarks ?? false} /> Отметка по чеклисту заметки дня</label
-		>
-	</fieldset>
-	<div class="three">
-		<label>Единица <input name="unit" value={p?.unit ?? ''} placeholder="мин" required /></label>
-		<label>Минимум <input name="minDose" inputmode="decimal" value={p?.minDose ?? ''} required /></label>
-		<label>Норма <input name="normDose" inputmode="decimal" value={p?.normDose ?? ''} required /></label>
+			</section>
+		{/each}
 	</div>
-{/snippet}
 
-{#snippet goalFields(g?: (typeof data.goals)[number])}
-	<label>Название <input name="title" value={g?.title ?? ''} required /></label>
-	<label
-		>Категория
-		<select name="categoryId" required>
-			{#if !g}<option value="" disabled selected>Выберите категорию</option>{/if}
-			{#each data.categories.filter((c) => !c.archivedAt || c.id === g?.categoryId) as c (c.id)}
-				<option value={c.id} selected={c.id === g?.categoryId}>{c.name}</option>
-			{/each}
-		</select>
-	</label>
-	<label>Направление — зачем <input name="direction" value={g?.direction ?? ''} /></label>
-	<label>Текущий майлстон <input name="milestoneText" value={g?.milestoneText ?? ''} /></label>
-{/snippet}
-
-{#snippet categoryFields(c?: (typeof data.categories)[number])}
-	<label>Название <input name="name" value={c?.name ?? ''} required /></label>
-	<fieldset>
-		<legend>Цвет</legend>
-		<div class="swatches">
-			{#each paletteKeys as k, i (k)}
-				<label class="swatch" title={palette[k].name}>
-					<input type="radio" name="color" value={k} checked={c ? c.color === k : i === 0} />
-					<span style="--c:{palette[k].light};--cd:{palette[k].dark}"></span>
-				</label>
-			{/each}
-		</div>
-	</fieldset>
-{/snippet}
+	<h2 class="refs-title">Справочники</h2>
+	<ul class="refs">
+		<li><a href="/settings/categories">Категории<span class="meta">{data.categories.filter((c) => !c.archivedAt).length}</span><ChevronRight size={18} /></a></li>
+		<li><a href="/settings/formats">Форматы<span class="meta">{data.formats.filter((f) => !f.archivedAt).length}</span><ChevronRight size={18} /></a></li>
+	</ul>
+	<ul class="refs">
+		<li><a href="/settings/archive">Архив<span class="meta">{archivedCount}</span><ChevronRight size={18} /></a></li>
+	</ul>
+</main>
 
 <style>
 	main {
@@ -334,33 +216,96 @@
 		margin: 0 auto;
 		padding: 0 16px calc(env(safe-area-inset-bottom) + 32px);
 	}
-	h2,
-	.h2 {
+	h2 {
+		display: flex;
+		align-items: center;
+		gap: 8px;
 		font-size: 13px;
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		color: var(--muted);
-		margin: 24px 0 8px;
+		margin: 22px 0 8px;
+	}
+	.dot {
+		width: 12px;
+		height: 12px;
+		border-radius: 4px;
+		background: var(--c);
 	}
 	ul {
 		list-style: none;
 		margin: 0;
 		padding: 0;
+	}
+	.goals {
 		background: var(--surface);
 		border-radius: 12px;
 		overflow: hidden;
 	}
-	.practice {
-		position: relative;
+	.goals > li + li {
+		border-top: 1px solid var(--line);
 	}
-	.practice summary {
-		padding-right: 56px;
+	.goal-row {
+		display: flex;
+		align-items: center;
+		min-height: 48px;
+		padding-left: 4px;
+	}
+	.chev {
+		width: 36px;
+		height: 44px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+		background: none;
+		color: var(--muted);
+		cursor: pointer;
+		transition: transform 0.15s;
+	}
+	.chev.open {
+		transform: rotate(90deg);
+	}
+	.goal-link {
+		flex: 1;
+		min-width: 0;
+		padding: 12px 0;
+		color: var(--text);
+		text-decoration: none;
+		font-weight: 600;
+	}
+	.count {
+		color: var(--muted);
+		font-size: 13px;
+		margin-right: 4px;
+	}
+	.practices {
+		padding-left: 36px;
+	}
+	.practice {
+		display: flex;
+		align-items: center;
+		border-top: 1px solid var(--line);
+	}
+	.practice a {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		padding: 10px 0;
+		color: var(--text);
+		text-decoration: none;
+	}
+	.ptitle {
+		font-size: 16px;
+	}
+	.meta {
+		color: var(--muted);
+		font-size: 13px;
 	}
 	.handle {
-		position: absolute;
-		top: 2px;
-		right: 6px;
+		flex: none;
 		width: 44px;
 		height: 44px;
 		display: inline-flex;
@@ -372,210 +317,95 @@
 		touch-action: none;
 		cursor: grab;
 	}
-	:global(.sorting) li:not(:global(.dragging)) {
-		transition: transform 0.12s;
+	.add button {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		min-height: 44px;
+		padding: 0 14px;
+		border: none;
+		background: none;
+		color: var(--muted);
+		font: inherit;
+		font-size: 15px;
+		cursor: pointer;
 	}
-	:global(li.dragging) {
+	.practices .add {
+		border-top: 1px solid var(--line);
+	}
+	.practices .add button {
+		padding-left: 0;
+	}
+	li.dragging {
 		background: var(--bg);
 		box-shadow: 0 6px 18px rgb(0 0 0 / 0.18);
 		position: relative;
 		z-index: 1;
 	}
-	li + li {
+	.tree.sorting {
+		user-select: none;
+		-webkit-user-select: none;
+	}
+	.refs-title {
+		margin-top: 30px;
+	}
+	.refs {
+		background: var(--surface);
+		border-radius: 12px;
+		overflow: hidden;
+		margin-bottom: 12px;
+	}
+	.refs li + li {
 		border-top: 1px solid var(--line);
 	}
-	summary {
+	.refs a {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: 8px;
 		min-height: 48px;
-		padding: 0 14px;
-		cursor: pointer;
-		list-style: none;
+		padding: 0 10px 0 14px;
+		color: var(--text);
+		text-decoration: none;
 	}
-	summary::-webkit-details-marker {
-		display: none;
-	}
-	.add {
-		color: var(--muted);
-	}
-	.title {
-		flex: 1;
-	}
-	.meta {
-		color: var(--muted);
-		font-size: 14px;
-	}
-	.dot {
-		width: 12px;
-		height: 12px;
-		border-radius: 4px;
-		background: var(--c);
-		flex: none;
-	}
-	form {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-		padding: 4px 14px 12px;
-	}
-	.row {
-		display: flex;
-		gap: 8px;
-		padding: 0 14px 14px;
-	}
-	.row form {
-		padding: 0;
-	}
-	.push {
+	.refs a .meta {
 		margin-left: auto;
-	}
-	label {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		font-size: 13px;
-		color: var(--muted);
-	}
-	input:not([type='radio']),
-	select {
-		font-size: 17px;
-		min-height: 44px;
-		padding: 0 10px;
-		border-radius: 10px;
-		border: 1px solid var(--line);
-		background: var(--bg);
-		color: var(--text);
-		width: 100%;
-		box-sizing: border-box;
-	}
-	.three {
-		display: grid;
-		grid-template-columns: 1fr 1fr 1fr;
-		gap: 8px;
-	}
-	button {
-		min-height: 44px;
-		padding: 0 16px;
-		border-radius: 10px;
-		border: 1px solid var(--line);
-		background: var(--bg);
-		cursor: pointer;
-	}
-	button:disabled {
-		opacity: 0.35;
-	}
-	button.quiet {
-		background: none;
-		color: var(--muted);
-	}
-	fieldset {
-		border: none;
-		padding: 0;
-		margin: 0;
-	}
-	legend {
-		font-size: 13px;
-		color: var(--muted);
-		margin-bottom: 6px;
-	}
-	.swatches {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 10px;
-	}
-	.swatch input {
-		position: absolute;
-		opacity: 0;
-	}
-	.swatch span {
-		display: block;
-		width: 34px;
-		height: 34px;
-		border-radius: 10px;
-		background: var(--c);
-		border: 3px solid transparent;
-	}
-	@media (prefers-color-scheme: dark) {
-		.swatch span {
-			background: var(--cd);
-		}
-	}
-	.swatch input:checked + span {
-		border-color: var(--text);
-	}
-	.swatch input:focus-visible + span {
-		outline: 2px solid var(--text);
-		outline-offset: 2px;
-	}
-	.weekdays {
-		display: flex;
-		gap: 6px;
-	}
-	.wd {
-		flex: 1;
-	}
-	.wd input {
-		position: absolute;
-		opacity: 0;
-	}
-	.wd span {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		min-height: 40px;
-		border-radius: 8px;
-		border: 1px solid var(--line);
-		color: var(--text);
-		font-size: 14px;
-	}
-	.wd input:checked + span {
-		background: var(--text);
-		color: var(--bg);
-		border-color: var(--text);
-	}
-	.wd input:focus-visible + span {
-		outline: 2px solid var(--text);
-		outline-offset: 2px;
-	}
-	.toggle {
-		flex-direction: row;
-		align-items: center;
-		gap: 10px;
-		min-height: 40px;
-		font-size: 15px;
-		color: var(--text);
-	}
-	.toggle input {
-		width: 20px;
-		height: 20px;
-		flex: none;
-	}
-	.limit {
-		flex-direction: row;
-		align-items: flex-end;
-		padding: 12px 14px;
-	}
-	.limit label {
-		flex: 1;
-	}
-	.hint {
-		font-size: 13px;
-		color: var(--muted);
-		margin: 8px 4px 0;
-	}
-	.archived {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 6px 6px 6px 14px;
-	}
-	.archived form {
-		padding: 0;
 	}
 	.error {
 		background: color-mix(in oklab, #c98a06 18%, var(--surface));
 		padding: 10px 14px;
 		border-radius: 10px;
+	}
+	.scrim {
+		position: fixed;
+		inset: 0;
+		z-index: 6;
+	}
+	.addmenu {
+		position: fixed;
+		right: 12px;
+		top: calc(env(safe-area-inset-top) + 50px);
+		z-index: 7;
+		min-width: 200px;
+		padding: 6px;
+		background: var(--surface);
+		border-radius: 14px;
+		box-shadow: 0 10px 30px rgb(0 0 0 / 0.22);
+	}
+	.addmenu button,
+	.addmenu a {
+		display: flex;
+		width: 100%;
+		min-height: 44px;
+		align-items: center;
+		padding: 0 12px;
+		border: none;
+		border-radius: 10px;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		font-size: 16px;
+		text-decoration: none;
+		text-align: left;
+		cursor: pointer;
 	}
 </style>

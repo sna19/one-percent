@@ -181,3 +181,52 @@ export function setOrder(db: Db, kind: string, ids: number[]) {
 
 /** «Порядок» on Today (#9): the practices' order. */
 export const setPracticeOrder = (db: Db, ids: number[]) => setOrder(db, 'practice', ids);
+
+// ── Spec 007 C: the settings tree ──────────────────────────────────────────
+
+/** «+ Практика» at the end of a goal: created at once, then edited on its own screen. */
+export function createPractice(db: Db, goalId: number): number {
+	if (!db.select({ id: goals.id }).from(goals).where(eq(goals.id, goalId)).get()) throw new InputError('Цель не найдена');
+	const [p] = db
+		.insert(practices)
+		.values({ goalId, title: 'Новая практика', unit: 'мин', minDose: 5, normDose: 15, sortOrder: nextOrder(db, practices) })
+		.returning()
+		.all();
+	return p.id;
+}
+
+/** «+ Цель» at the end of a category. */
+export function createGoal(db: Db, categoryId: number): number {
+	if (!db.select({ id: categories.id }).from(categories).where(eq(categories.id, categoryId)).get())
+		throw new InputError('Категория не найдена');
+	const [g] = db.insert(goals).values({ title: 'Новая цель', categoryId, sortOrder: nextOrder(db, goals) }).returning().all();
+	return g.id;
+}
+
+/**
+ * A drop in the tree: the item may change its parent, and the whole order shown on screen is
+ * saved at once — practices in tree order (the same order Today uses), goals in tree order.
+ */
+export function applyTreeDrop(
+	db: Db,
+	drop: { practiceGoal?: { id: number; goalId: number }; goalCategory?: { id: number; categoryId: number }; practiceOrder?: number[]; goalOrder?: number[] }
+) {
+	db.transaction((tx) => {
+		const t = tx as unknown as Db;
+		if (drop.practiceGoal) {
+			const { id, goalId } = drop.practiceGoal;
+			if (!Number.isInteger(id) || !Number.isInteger(goalId)) throw new InputError('Неверный перенос');
+			if (!t.select({ id: goals.id }).from(goals).where(eq(goals.id, goalId)).get()) throw new InputError('Цель не найдена');
+			t.update(practices).set({ goalId }).where(eq(practices.id, id)).run();
+		}
+		if (drop.goalCategory) {
+			const { id, categoryId } = drop.goalCategory;
+			if (!Number.isInteger(id) || !Number.isInteger(categoryId)) throw new InputError('Неверный перенос');
+			if (!t.select({ id: categories.id }).from(categories).where(eq(categories.id, categoryId)).get())
+				throw new InputError('Категория не найдена');
+			t.update(goals).set({ categoryId }).where(eq(goals.id, id)).run();
+		}
+		if (drop.practiceOrder) setOrder(t, 'practice', drop.practiceOrder);
+		if (drop.goalOrder) setOrder(t, 'goal', drop.goalOrder);
+	});
+}
