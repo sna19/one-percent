@@ -193,7 +193,7 @@
 	};
 	const sourceLabel = (src: string) =>
 		SOURCE_LABEL[src] ??
-		(src.startsWith('template:') ? 'по шаблону' : src.startsWith('week:') ? `по неделе с ${label(src.slice(5))}` : '');
+		(src.startsWith('template:') ? 'по шаблону недели' : src.startsWith('week:') ? `по неделе с ${label(src.slice(5))}` : '');
 
 	let confirming = $state(false);
 	async function confirmDraft() {

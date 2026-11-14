@@ -10,6 +10,9 @@
 	import { backFrom } from '#lib/back.js';
 	import CalendarPlus from '@lucide/svelte/icons/calendar-plus';
 	import Layers from '@lucide/svelte/icons/layers';
+	import GripVertical from '@lucide/svelte/icons/grip-vertical';
+	import { inPreview, saveOrder, sortable } from '#lib/sortable.js';
+	import { settingsApi } from '#lib/settingsApi.js';
 	import { isEmptyNote, type NoteDoc } from '#lib/note.js';
 	import { enqueueDayNote, flush } from '#lib/store.js';
 
@@ -41,6 +44,43 @@
 	let picker = $state<'template' | 'week' | undefined>();
 	let saveTemplate = $state(false);
 	let templateName = $state('');
+	/** Spec 007 D: save as a new week template, or replace one */
+	let saveMode = $state<'new' | number>('new');
+	let manage = $state(false);
+	let tplPreview = $state<number[] | null>(null);
+	let limitInput = $state('');
+	let renameTimers: Record<number, ReturnType<typeof setTimeout>> = {};
+	function renameTemplate(id: number, name: string) {
+		clearTimeout(renameTimers[id]);
+		renameTimers[id] = setTimeout(async () => {
+			try {
+				await settingsApi('template', { id, name });
+				await call(null);
+			} catch (e) {
+				error = (e as Error).message;
+			}
+		}, 600);
+	}
+	async function deleteTemplate(id: number, name: string) {
+		if (!window.confirm(`Удалить шаблон недели «${name}»? Его можно будет вернуть из архива в настройках.`)) return;
+		await settingsApi('archive', { kind: 'template', id });
+		await call(null);
+	}
+	let limitTimer: ReturnType<typeof setTimeout> | undefined;
+	function saveLimit() {
+		clearTimeout(limitTimer);
+		limitTimer = setTimeout(async () => {
+			try {
+				await settingsApi('limit', { limit: limitInput.trim() });
+				await call(null);
+			} catch (e) {
+				error = (e as Error).message;
+			}
+		}, 600);
+	}
+	$effect(() => {
+		if (manage) limitInput = data?.limit ? String(data.limit) : '';
+	});
 	let done = $state(false);
 
 	const planned = $derived(new Set(Object.entries(data?.plan?.items ?? {}).flatMap(([p, ds]) => ds.map((d) => `${p}|${d}`))));
@@ -162,7 +202,15 @@
 	const row = (p: PracticeView, mode: 'daily' | 'default' | 'clear') => call({ action: 'row', practiceId: p.id, mode });
 
 	async function confirm() {
-		const ok = await call({ action: 'confirm', templateName: saveTemplate ? templateName : undefined });
+		if (saveTemplate && saveMode !== 'new') {
+			const t = data?.templates.find((x) => x.id === saveMode);
+			if (!window.confirm(`Заменить шаблон недели «${t?.name}» этим планом? Прежнее содержимое шаблона пропадёт.`)) return;
+		}
+		const ok = await call({
+			action: 'confirm',
+			templateName: saveTemplate && saveMode === 'new' ? templateName : undefined,
+			replaceTemplateId: saveTemplate && saveMode !== 'new' ? saveMode : undefined
+		});
 		if (ok) done = true;
 	}
 
@@ -174,7 +222,7 @@
 	onMount(async () => {
 		await call(null);
 		const q = page.url.searchParams;
-		if (q.get('templates')) picker = 'template';
+		if (q.get('templates')) manage = true;
 		if (q.get('fresh')) fresh();
 	});
 
@@ -189,7 +237,7 @@
 		subtitle="{label(days[0])} – {label(days[6])}"
 		back={backFrom(page.url.searchParams, 'week')}
 		menu={[
-			{ label: 'Шаблоны недели', icon: Layers, onclick: () => (picker = 'template') },
+			{ label: 'Шаблоны недели', icon: Layers, onclick: () => (manage = true) },
 			{ label: 'Новая неделя с нуля', icon: CalendarPlus, onclick: () => fresh() }
 		]}
 	/>
@@ -198,7 +246,13 @@
 
 	{#if done}
 		<div class="done">
-			<p>План утверждён{saveTemplate && templateName ? `, шаблон «${templateName}» сохранён` : ''}.</p>
+			<p>
+				План утверждён{saveTemplate && saveMode === 'new' && templateName
+					? `, шаблон недели «${templateName}» сохранён`
+					: saveTemplate && saveMode !== 'new'
+						? `, шаблон недели «${data?.templates.find((x) => x.id === saveMode)?.name}» заменён`
+						: ''}.
+			</p>
 			<a class="primary" href="/">К неделе</a>
 		</div>
 	{:else if !data}
@@ -210,7 +264,7 @@
 				<button disabled={busy} onclick={() => source('previous')}>Как прошлая неделя</button>
 				<button disabled={busy} onclick={() => source('empty')}>С нуля</button>
 				<button disabled={busy || !data.templates.length} onclick={() => (picker = picker === 'template' ? undefined : 'template')}
-					>Шаблон{data.templates.length ? '' : ' (нет)'}</button
+					>Шаблон недели{data.templates.length ? '' : ' (нет)'}</button
 				>
 				<button disabled={busy || !data.pastWeeks.length} onclick={() => (picker = picker === 'week' ? undefined : 'week')}
 					>Другая неделя</button
@@ -285,14 +339,57 @@
 
 		<section>
 			<h2>3. Утвердить</h2>
-			<label class="check"><input type="checkbox" bind:checked={saveTemplate} /> Сохранить как шаблон</label>
+			<label class="check"><input type="checkbox" bind:checked={saveTemplate} /> Сохранить как шаблон недели</label>
 			{#if saveTemplate}
-				<input class="text" bind:value={templateName} placeholder="Например, «Обычная неделя»" maxlength="100" />
+				<div class="save-choice" role="radiogroup" aria-label="Куда сохранить">
+					<label class="radio"><input type="radio" bind:group={saveMode} value="new" /> Новый шаблон</label>
+					{#each data.templates as t (t.id)}
+						<label class="radio"><input type="radio" bind:group={saveMode} value={t.id} /> Заменить: {t.name}</label>
+					{/each}
+				</div>
+				{#if saveMode === 'new'}
+					<input class="text" bind:value={templateName} placeholder="Например, «Обычная неделя»" maxlength="100" aria-label="Имя шаблона недели" />
+				{/if}
 			{/if}
-			<button class="primary" disabled={busy || (saveTemplate && !templateName.trim())} onclick={confirm}>Утвердить план</button>
+			<button class="primary" disabled={busy || (saveTemplate && saveMode === 'new' && !templateName.trim())} onclick={confirm}>Утвердить план</button>
 		</section>
 	{/if}
 </main>
+
+{#if manage && data}
+	<div class="backdrop" role="presentation" onclick={() => (manage = false)}></div>
+	<div class="menu manage" role="dialog" aria-label="Шаблоны недели">
+		<div class="manage-head"><p>Шаблоны недели</p><button class="quiet small" onclick={() => (manage = false)}>Готово</button></div>
+		{#if data.templates.length}
+			<ul
+				class="tpl-list"
+				use:sortable={{
+					preview: (ids) => (tplPreview = ids),
+					drop: async (ids) => {
+						tplPreview = ids;
+						await saveOrder('template', ids).catch(() => (error = 'Порядок не сохранился'));
+						await call(null);
+						tplPreview = null;
+					}
+				}}
+			>
+				{#each inPreview(data.templates, tplPreview, (t) => t.id) as t (t.id)}
+					<li data-id={t.id}>
+						<input value={t.name} aria-label="Имя шаблона недели" oninput={(e) => renameTemplate(t.id, e.currentTarget.value)} />
+						<button class="del" aria-label="Удалить шаблон недели «{t.name}»" title="Удалить" onclick={() => deleteTemplate(t.id, t.name)}>Удалить</button>
+						<button class="grip" data-handle aria-label="{t.name}: перетащить" title="Перетащить"><GripVertical size={20} /></button>
+					</li>
+				{/each}
+			</ul>
+		{:else}
+			<p class="muted small">Шаблонов недели пока нет. Сохраните план как шаблон недели при утверждении.</p>
+		{/if}
+		<label class="limit-label"
+			>Мягкий лимит практик в плане
+			<input class="text" bind:value={limitInput} inputmode="numeric" placeholder="без лимита" oninput={saveLimit} />
+		</label>
+	</div>
+{/if}
 
 {#if menu}
 	{@const m = menu}
@@ -498,6 +595,72 @@
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
+	}
+	.manage {
+		max-height: 80vh;
+		overflow-y: auto;
+	}
+	.manage-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.menu button.small {
+		min-height: 36px;
+		padding: 0 12px;
+	}
+	.tpl-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.tpl-list li {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		border-radius: 10px;
+	}
+	.tpl-list input {
+		flex: 1;
+		min-width: 0;
+		min-height: 44px;
+		padding: 0 10px;
+		font-size: 16px;
+		border-radius: 10px;
+		border: 1px solid var(--line);
+		background: var(--bg);
+		color: var(--text);
+	}
+	.menu .del {
+		min-height: 44px;
+		padding: 0 10px;
+		font-size: 14px;
+		color: #b5541b;
+	}
+	.menu .grip {
+		width: 44px;
+		border: none;
+		background: none;
+		color: var(--muted);
+		touch-action: none;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.limit-label {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		margin-top: 8px;
+		font-size: 13px;
+		color: var(--muted);
+	}
+	:global(.tpl-list li.dragging) {
+		background: var(--bg);
+		box-shadow: 0 6px 18px rgb(0 0 0 / 0.18);
 	}
 	.menu p {
 		margin: 0 0 4px;

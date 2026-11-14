@@ -188,7 +188,12 @@ export function setPlanRow(
 	});
 }
 
-export function confirmPlan(db: Db, start: DateStr, templateName?: string) {
+/**
+ * Confirms the week's plan. Optionally saves it as a week template: a new one (`templateName`) or
+ * replacing an existing one (`replaceTemplateId`, Spec 007 D — id and name stay, contents change).
+ * Day notes go into the template with boxes cleared.
+ */
+export function confirmPlan(db: Db, start: DateStr, templateName?: string, replaceTemplateId?: number) {
 	checkWeek(start);
 	const plan = ensureRow(db, start, 'empty');
 	db.transaction((tx) => {
@@ -196,16 +201,27 @@ export function confirmPlan(db: Db, start: DateStr, templateName?: string) {
 			.set({ status: 'confirmed', confirmedAt: new Date().toISOString() })
 			.where(eq(weekPlans.id, plan.id))
 			.run();
-		const name = templateName?.trim();
-		if (name) {
-			if (name.length > 100) throw new InputError('Слишком длинное имя шаблона');
-			const [{ m }] = tx.select({ m: max(planTemplates.sortOrder) }).from(planTemplates).all();
-			const [tpl] = tx.insert(planTemplates).values({ name, sortOrder: (m ?? -1) + 1 }).returning().all();
+		let tplId: number | undefined;
+		if (replaceTemplateId !== undefined) {
+			const tpl = tx.select().from(planTemplates).where(eq(planTemplates.id, replaceTemplateId)).get();
+			if (!tpl || tpl.archivedAt) throw new InputError('Шаблон недели не найден');
+			tx.delete(planTemplateItems).where(eq(planTemplateItems.templateId, tpl.id)).run();
+			tplId = tpl.id;
+		} else {
+			const name = templateName?.trim();
+			if (name) {
+				if (name.length > 100) throw new InputError('Слишком длинное имя шаблона недели');
+				const [{ m }] = tx.select({ m: max(planTemplates.sortOrder) }).from(planTemplates).all();
+				const [tpl] = tx.insert(planTemplates).values({ name, sortOrder: (m ?? -1) + 1 }).returning().all();
+				tplId = tpl.id;
+			}
+		}
+		if (tplId !== undefined) {
 			const active = activePracticeIds(tx as unknown as Db);
 			for (const it of tx.select().from(planItems).where(eq(planItems.weekPlanId, plan.id)).all())
 				if (active.has(it.practiceId))
 					tx.insert(planTemplateItems)
-						.values({ templateId: tpl.id, practiceId: it.practiceId, weekday: weekdayOf(it.date), note: freshNote(it.note) })
+						.values({ templateId: tplId, practiceId: it.practiceId, weekday: weekdayOf(it.date), note: freshNote(it.note) })
 						.onConflictDoNothing()
 						.run();
 		}

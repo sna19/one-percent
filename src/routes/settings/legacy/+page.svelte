@@ -138,7 +138,7 @@
 			{#each inPreview(data.templates.filter((t) => !t.archivedAt), preview.template ?? null, (x) => x.id) as t (t.id)}
 				<li class="practice" data-id={t.id}>
 					<details>
-						<summary><span class="title">{t.name}</span><span class="meta">шаблон</span></summary>
+						<summary><span class="title">{t.name}</span><span class="meta">шаблон недели</span></summary>
 						<form method="POST" action="?/template" use:enhance={save}>
 							<input type="hidden" name="id" value={t.id} />
 							<label>Название <input name="name" value={t.name} required /></label>
@@ -150,7 +150,7 @@
 				</li>
 			{/each}
 		</ul>
-		<p class="hint">Шаблоны создаются на экране плана: «Утвердить» → «Сохранить как шаблон».</p>
+		<p class="hint">Шаблоны недели создаются на экране плана: «Утвердить» → «Сохранить как шаблон недели».</p>
 	</section>
 
 	<section>

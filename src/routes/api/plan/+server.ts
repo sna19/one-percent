@@ -66,7 +66,12 @@ export async function POST({ request }) {
 				copyDayNoteToWeek(db, b.practiceId, String(b.date), today);
 				break;
 			case 'confirm':
-				confirmPlan(db, start, typeof b.templateName === 'string' ? b.templateName : undefined);
+				confirmPlan(
+					db,
+					start,
+					typeof b.templateName === 'string' ? b.templateName : undefined,
+					Number.isInteger(b.replaceTemplateId) ? b.replaceTemplateId : undefined
+				);
 				break;
 			default:
 				error(400, 'unknown action');

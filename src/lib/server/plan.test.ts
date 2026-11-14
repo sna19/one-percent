@@ -210,3 +210,21 @@ describe('copy a day note to the week', async () => {
 		expect(getPlan(db, W2)!.notes['3|2026-11-09']).toBeUndefined();
 	});
 });
+
+describe('week templates (Spec 007 D)', () => {
+	it('replacing keeps id and name and changes the contents', () => {
+		const db = setup();
+		applySource(db, W1, W1, 'empty');
+		setPlanRow(db, W1, W1, 1, 'daily');
+		confirmPlan(db, W1, 'Обычная');
+		const [t] = listTemplates(db);
+		applySource(db, W2, W2, 'empty');
+		setPlanItem(db, W2, W2, 4, '2026-11-09', true);
+		confirmPlan(db, W2, undefined, t.id);
+		const after = listTemplates(db);
+		expect(after.map((x) => [x.id, x.name])).toEqual([[t.id, 'Обычная']]);
+		applySource(db, '2026-11-15', '2026-11-15', `template:${t.id}`);
+		expect(getPlan(db, '2026-11-15')!.items).toEqual({ 4: ['2026-11-16'] });
+		expect(() => confirmPlan(db, W2, undefined, 999)).toThrow(InputError);
+	});
+});
