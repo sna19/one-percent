@@ -1,12 +1,12 @@
 import { error, json } from '@sveltejs/kit';
 import { getDb } from '#lib/server/db.js';
-import { InputError, setPracticeOrder } from '#lib/server/settings.js';
+import { InputError, setOrder } from '#lib/server/settings.js';
 
-/** «Порядок» on Today: { ids: practice ids in the new order }. The same order as in settings. */
+/** Drag order: { kind?: practice|goal|category|format|template, ids: in the new order }. */
 export async function POST({ request }) {
 	const b = await request.json().catch(() => null);
 	try {
-		setPracticeOrder(getDb(), b?.ids);
+		setOrder(getDb(), b?.kind ?? 'practice', b?.ids);
 	} catch (e) {
 		if (e instanceof InputError) error(400, e.message);
 		throw e;

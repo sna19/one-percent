@@ -11,6 +11,7 @@ export const categories = sqliteTable('categories', {
 	name: text('name').notNull(),
 	/** Key from the fixed palette (no red), see src/lib/palette.ts. */
 	color: text('color').notNull(),
+	sortOrder: integer('sort_order').notNull().default(0),
 	archivedAt: text('archived_at'),
 	createdAt: createdAt()
 });
@@ -25,6 +26,7 @@ export const goals = sqliteTable('goals', {
 	milestoneText: text('milestone_text').notNull().default(''),
 	/** v0.1 uses only 'active'; other statuses come with later specs. */
 	status: text('status').notNull().default('active'),
+	sortOrder: integer('sort_order').notNull().default(0),
 	archivedAt: text('archived_at'),
 	createdAt: createdAt()
 });
@@ -112,6 +114,7 @@ export const planItems = sqliteTable(
 export const planTemplates = sqliteTable('plan_templates', {
 	id: integer('id').primaryKey({ autoIncrement: true }),
 	name: text('name').notNull(),
+	sortOrder: integer('sort_order').notNull().default(0),
 	archivedAt: text('archived_at'),
 	createdAt: createdAt()
 });

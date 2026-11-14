@@ -3,10 +3,32 @@
 	import { page } from '$app/state';
 	import TopBar from '#lib/TopBar.svelte';
 	import { backFrom } from '#lib/back.js';
+	import { invalidateAll } from '$app/navigation';
+	import GripVertical from '@lucide/svelte/icons/grip-vertical';
+	import { inPreview, saveOrder, sortable } from '#lib/sortable.js';
 	import { colorOf, palette, paletteKeys } from '#lib/palette.js';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
+
+	// Spec 007 B: every list sorts by dragging its ≡ handle
+	type Kind = 'practice' | 'goal' | 'category' | 'format' | 'template';
+	let preview = $state<Partial<Record<Kind, number[] | null>>>({});
+	let orderError = $state<string | undefined>();
+	const drag = (kind: Kind) => ({
+		preview: (ids: number[] | null) => (preview[kind] = ids),
+		drop: async (ids: number[]) => {
+			preview[kind] = ids;
+			try {
+				await saveOrder(kind, ids);
+				orderError = undefined;
+			} catch {
+				orderError = 'Порядок не сохранился: нет связи с сервером';
+			}
+			await invalidateAll();
+			preview[kind] = null;
+		}
+	});
 
 	const active = <T extends { archivedAt: string | null }>(xs: T[]) => xs.filter((x) => !x.archivedAt);
 	const archived = $derived([
@@ -35,13 +57,14 @@
 	<TopBar title="Настройки" back={backFrom(page.url.searchParams)} />
 
 	{#if form?.error}<p class="error" role="alert">{form.error}</p>{/if}
+	{#if orderError}<p class="error" role="alert">{orderError}</p>{/if}
 
 	<section>
 		<h2>Практики</h2>
-		<ul>
-			{#each active(data.practices) as p, i (p.id)}
+		<ul use:sortable={drag('practice')}>
+			{#each inPreview(active(data.practices), preview.practice ?? null, (x) => x.id) as p (p.id)}
 				{@const c = catOfGoal(p.goalId)}
-				<li class="practice">
+				<li class="practice" data-id={p.id}>
 					<details>
 						<summary>
 							<span class="dot" style="--c:{colorOf(c?.color ?? 'slate').light}"></span>
@@ -55,17 +78,7 @@
 						</form>
 						<div class="row">{@render archiveBtn('practice', p.id)}</div>
 					</details>
-					<!-- Order is the main-screen row order: always visible, one tap per step. -->
-					<div class="order">
-						<form method="POST" action="?/move" use:enhance>
-							<input type="hidden" name="kind" value="practice" /><input type="hidden" name="id" value={p.id} /><input type="hidden" name="dir" value="-1" />
-							<button disabled={i === 0} aria-label="{p.title}: выше">↑</button>
-						</form>
-						<form method="POST" action="?/move" use:enhance>
-							<input type="hidden" name="kind" value="practice" /><input type="hidden" name="id" value={p.id} /><input type="hidden" name="dir" value="1" />
-							<button disabled={i === active(data.practices).length - 1} aria-label="{p.title}: ниже">↓</button>
-						</form>
-					</div>
+					{@render handle(p.title)}
 				</li>
 			{/each}
 			<li>
@@ -82,9 +95,9 @@
 
 	<section>
 		<h2>Цели</h2>
-		<ul>
-			{#each active(data.goals) as g (g.id)}
-				<li>
+		<ul use:sortable={drag('goal')}>
+			{#each inPreview(active(data.goals), preview.goal ?? null, (x) => x.id) as g (g.id)}
+				<li class="practice" data-id={g.id}>
 					<details>
 						<summary>
 							<span class="title">{g.title}</span>
@@ -97,6 +110,7 @@
 						</form>
 						<div class="row">{@render archiveBtn('goal', g.id)}</div>
 					</details>
+					{@render handle(g.title)}
 				</li>
 			{/each}
 			<li>
@@ -113,7 +127,7 @@
 
 	<section>
 		<h2>План</h2>
-		<ul>
+		<ul use:sortable={drag('template')}>
 			<li>
 				<form method="POST" action="?/limit" use:enhance class="limit">
 					<label
@@ -123,8 +137,8 @@
 					<button>Сохранить</button>
 				</form>
 			</li>
-			{#each data.templates.filter((t) => !t.archivedAt) as t (t.id)}
-				<li>
+			{#each inPreview(data.templates.filter((t) => !t.archivedAt), preview.template ?? null, (x) => x.id) as t (t.id)}
+				<li class="practice" data-id={t.id}>
 					<details>
 						<summary><span class="title">{t.name}</span><span class="meta">шаблон</span></summary>
 						<form method="POST" action="?/template" use:enhance={save}>
@@ -134,6 +148,7 @@
 						</form>
 						<div class="row">{@render archiveBtn('template', t.id)}</div>
 					</details>
+					{@render handle(t.name)}
 				</li>
 			{/each}
 		</ul>
@@ -142,9 +157,9 @@
 
 	<section>
 		<h2>Форматы</h2>
-		<ul>
-			{#each active(data.formats) as f, i (f.id)}
-				<li class="practice">
+		<ul use:sortable={drag('format')}>
+			{#each inPreview(active(data.formats), preview.format ?? null, (x) => x.id) as f (f.id)}
+				<li class="practice" data-id={f.id}>
 					<details>
 						<summary>
 							<span class="title">{f.name}</span>
@@ -157,16 +172,7 @@
 						</form>
 						<div class="row">{@render archiveBtn('format', f.id)}</div>
 					</details>
-					<div class="order">
-						<form method="POST" action="?/move" use:enhance>
-							<input type="hidden" name="kind" value="format" /><input type="hidden" name="id" value={f.id} /><input type="hidden" name="dir" value="-1" />
-							<button disabled={i === 0} aria-label="{f.name}: выше">↑</button>
-						</form>
-						<form method="POST" action="?/move" use:enhance>
-							<input type="hidden" name="kind" value="format" /><input type="hidden" name="id" value={f.id} /><input type="hidden" name="dir" value="1" />
-							<button disabled={i === active(data.formats).length - 1} aria-label="{f.name}: ниже">↓</button>
-						</form>
-					</div>
+					{@render handle(f.name)}
 				</li>
 			{/each}
 			<li>
@@ -183,9 +189,9 @@
 
 	<section>
 		<h2>Категории</h2>
-		<ul>
-			{#each active(data.categories) as c (c.id)}
-				<li>
+		<ul use:sortable={drag('category')}>
+			{#each inPreview(active(data.categories), preview.category ?? null, (x) => x.id) as c (c.id)}
+				<li class="practice" data-id={c.id}>
 					<details>
 						<summary>
 							<span class="dot" style="--c:{colorOf(c.color).light}"></span>
@@ -198,6 +204,7 @@
 						</form>
 						<div class="row">{@render archiveBtn('category', c.id)}</div>
 					</details>
+					{@render handle(c.name)}
 				</li>
 			{/each}
 			<li>
@@ -232,6 +239,10 @@
 		</section>
 	{/if}
 </main>
+
+{#snippet handle(title: string)}
+	<button class="handle" data-handle aria-label="{title}: перетащить" title="Перетащить"><GripVertical size={20} /></button>
+{/snippet}
 
 {#snippet archiveBtn(kind: string, id: number)}
 	<form method="POST" action="?/archive" use:enhance class="push">
@@ -344,29 +355,31 @@
 		position: relative;
 	}
 	.practice summary {
-		padding-right: 104px;
+		padding-right: 56px;
 	}
-	.order {
+	.handle {
 		position: absolute;
 		top: 2px;
-		right: 8px;
-		display: flex;
-		gap: 4px;
-	}
-	.order form {
-		padding: 0;
-	}
-	.order button {
-		min-height: 44px;
+		right: 6px;
 		width: 44px;
-		padding: 0;
+		height: 44px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
 		border: none;
 		background: none;
-		font-size: 18px;
 		color: var(--muted);
+		touch-action: none;
+		cursor: grab;
 	}
-	.order button:disabled {
-		opacity: 0.25;
+	:global(.sorting) li:not(:global(.dragging)) {
+		transition: transform 0.12s;
+	}
+	:global(li.dragging) {
+		background: var(--bg);
+		box-shadow: 0 6px 18px rgb(0 0 0 / 0.18);
+		position: relative;
+		z-index: 1;
 	}
 	li + li {
 		border-top: 1px solid var(--line);

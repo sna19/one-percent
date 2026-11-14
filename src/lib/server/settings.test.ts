@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { openDb } from './db.js';
 import { seedIfEmpty } from './seed.js';
-import { InputError, loadSettings, moveItem, saveFormat, savePlanLimit, savePractice, setArchived, setPracticeOrder } from './settings.js';
+import { InputError, loadSettings, moveItem, saveFormat, savePlanLimit, savePractice, setArchived, setPracticeOrder, setOrder } from './settings.js';
 import { loadWeek } from './week.js';
 
 const form = (o: Record<string, string | number>) => {
@@ -114,5 +114,16 @@ describe('setPracticeOrder', () => {
 		setPracticeOrder(db, [4, 1, 99, 3]);
 		expect(loadSettings(db).practices.map((p) => p.id)).toEqual([4, 1, 3, 2]);
 		expect(() => setPracticeOrder(db, ['x' as unknown as number])).toThrow(InputError);
+	});
+});
+
+describe('setOrder for every list', () => {
+	it('goals and categories reorder; unknown kind is rejected', () => {
+		const db = setup();
+		setOrder(db, 'goal', [4, 3]);
+		expect(loadSettings(db).goals.map((g) => g.id)).toEqual([4, 3, 1, 2]);
+		setOrder(db, 'category', [2, 1]);
+		expect(loadSettings(db).categories.map((c) => c.id)).toEqual([2, 1]);
+		expect(() => setOrder(db, 'entry', [1])).toThrow(InputError);
 	});
 });

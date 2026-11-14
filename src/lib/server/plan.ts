@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNull, lt } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, max } from 'drizzle-orm';
 import { addDays, isDateStr, weekDays, weekStart, type DateStr } from '../dates.js';
 import type { PlanView, WeekSummary } from '../types.js';
 import { checklistAmount, isEmptyNote, isNoteDoc, NOTE_MAX, uncheck, type NoteDoc } from '../note.js';
@@ -199,7 +199,8 @@ export function confirmPlan(db: Db, start: DateStr, templateName?: string) {
 		const name = templateName?.trim();
 		if (name) {
 			if (name.length > 100) throw new InputError('Слишком длинное имя шаблона');
-			const [tpl] = tx.insert(planTemplates).values({ name }).returning().all();
+			const [{ m }] = tx.select({ m: max(planTemplates.sortOrder) }).from(planTemplates).all();
+			const [tpl] = tx.insert(planTemplates).values({ name, sortOrder: (m ?? -1) + 1 }).returning().all();
 			const active = activePracticeIds(tx as unknown as Db);
 			for (const it of tx.select().from(planItems).where(eq(planItems.weekPlanId, plan.id)).all())
 				if (active.has(it.practiceId))
@@ -251,7 +252,7 @@ export function pastWeeks(db: Db, before: DateStr, limit = 12) {
 }
 
 export function listTemplates(db: Db) {
-	return db.select().from(planTemplates).orderBy(asc(planTemplates.name)).all();
+	return db.select().from(planTemplates).orderBy(asc(planTemplates.sortOrder), asc(planTemplates.id)).all();
 }
 
 export function getPlanLimit(db: Db): number | null {

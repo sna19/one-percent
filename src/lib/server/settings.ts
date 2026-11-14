@@ -42,10 +42,10 @@ const need = (v: number | undefined, what: string) => {
 
 export function loadSettings(db: Db) {
 	return {
-		categories: db.select().from(categories).orderBy(asc(categories.id)).all(),
-		goals: db.select().from(goals).orderBy(asc(goals.id)).all(),
+		categories: db.select().from(categories).orderBy(asc(categories.sortOrder), asc(categories.id)).all(),
+		goals: db.select().from(goals).orderBy(asc(goals.sortOrder), asc(goals.id)).all(),
 		formats: db.select().from(formats).orderBy(asc(formats.sortOrder), asc(formats.id)).all(),
-		templates: db.select().from(planTemplates).orderBy(asc(planTemplates.name)).all(),
+		templates: db.select().from(planTemplates).orderBy(asc(planTemplates.sortOrder), asc(planTemplates.id)).all(),
 		planLimit: getPlanLimit(db),
 		practices: db.select().from(practices).orderBy(asc(practices.sortOrder), asc(practices.id)).all()
 	};
@@ -56,7 +56,7 @@ export function saveCategory(db: Db, f: FormData) {
 	if (!paletteKeys.includes(values.color as never)) throw new InputError('Цвет только из палитры');
 	const cid = id(f);
 	if (cid) db.update(categories).set(values).where(eq(categories.id, cid)).run();
-	else db.insert(categories).values(values).run();
+	else db.insert(categories).values({ ...values, sortOrder: nextOrder(db, categories) }).run();
 }
 
 export function saveGoal(db: Db, f: FormData) {
@@ -68,7 +68,7 @@ export function saveGoal(db: Db, f: FormData) {
 	};
 	const gid = id(f);
 	if (gid) db.update(goals).set(values).where(eq(goals.id, gid)).run();
-	else db.insert(goals).values(values).run();
+	else db.insert(goals).values({ ...values, sortOrder: nextOrder(db, goals) }).run();
 }
 
 export function savePractice(db: Db, f: FormData) {
@@ -148,17 +148,36 @@ export function moveItem(db: Db, f: FormData) {
 	});
 }
 
+type Ordered = typeof practices | typeof goals | typeof categories | typeof formats | typeof planTemplates;
+const orderedTables: Record<string, Ordered> = {
+	practice: practices,
+	goal: goals,
+	category: categories,
+	format: formats,
+	template: planTemplates
+};
+
+export function nextOrder(db: Db, t: Ordered): number {
+	const [{ m }] = db.select({ m: max(t.sortOrder) }).from(t).all();
+	return (m ?? -1) + 1;
+}
+
 /**
- * Spec #9 «Порядок»: the order of practices as dragged on Today. The given ids come first in that
- * order, any others (archived, not on screen) keep their relative order after them.
+ * Spec 007 B — the order from a drag. The given ids come first in that order; any others
+ * (archived, not on screen) keep their relative order after them.
  */
-export function setPracticeOrder(db: Db, ids: number[]) {
+export function setOrder(db: Db, kind: string, ids: number[]) {
+	const t = orderedTables[kind];
+	if (!t) throw new InputError('Неизвестный тип');
 	if (!Array.isArray(ids) || !ids.every((x) => Number.isInteger(x))) throw new InputError('Неверный порядок');
-	const all = db.select({ id: practices.id }).from(practices).orderBy(asc(practices.sortOrder), asc(practices.id)).all();
-	const known = new Set(all.map((p) => p.id));
+	const all = db.select({ id: t.id }).from(t).orderBy(asc(t.sortOrder), asc(t.id)).all();
+	const known = new Set(all.map((r) => r.id));
 	const given = [...new Set(ids)].filter((x) => known.has(x));
-	const rest = all.map((p) => p.id).filter((x) => !given.includes(x));
+	const rest = all.map((r) => r.id).filter((x) => !given.includes(x));
 	db.transaction((tx) => {
-		[...given, ...rest].forEach((pid, n) => tx.update(practices).set({ sortOrder: n }).where(eq(practices.id, pid)).run());
+		[...given, ...rest].forEach((rid, n) => tx.update(t).set({ sortOrder: n }).where(eq(t.id, rid)).run());
 	});
 }
+
+/** «Порядок» on Today (#9): the practices' order. */
+export const setPracticeOrder = (db: Db, ids: number[]) => setOrder(db, 'practice', ids);
