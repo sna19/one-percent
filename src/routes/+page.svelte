@@ -128,6 +128,9 @@
 	const isFutureDay = $derived(viewDay > today);
 	const minDay = $derived(weekStart(today));
 	const maxDay = $derived(addDays(weekStart(today), 13));
+	// Spec 010 «Ротация»: weeks where a goal had no practices in the plan do not add to «N дней без»
+	const paused = $derived(new Map(Object.entries(week?.pausedWeeks ?? {}).map(([g, ws]) => [Number(g), new Set(ws)])));
+	const pausedOf = (goalId: number) => paused.get(goalId);
 	const day = $derived(todayLists(practices, viewDay, isPlanned, amountOf, pausedOf));
 	// #12: «Сделать что-то ещё» — recommended first as their own list, the rest as the settings tree
 	const recommended = $derived(day.other.filter((p) => p.recommended));
@@ -264,9 +267,6 @@
 		expanded = expanded === id ? null : id;
 	}
 
-	// Spec 010 «Ротация»: weeks where a goal had no practices in the plan do not add to «N дней без»
-	const paused = $derived(new Map(Object.entries(week?.pausedWeeks ?? {}).map(([g, ws]) => [Number(g), new Set(ws)])));
-	const pausedOf = (goalId: number) => paused.get(goalId);
 	const nOf = (p: PracticeView) => daysWithout(p.lastDone, p.createdOn, today, pausedOf(p.goalId));
 	// Priority is chosen among goals; in the plan view only among goals planned for today.
 	const top = $derived(
