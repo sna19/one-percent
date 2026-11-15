@@ -8,6 +8,7 @@
 	import { firstLine, type NoteDoc } from '#lib/note.js';
 	import { parseDays } from '#lib/days.js';
 	import Archive from '@lucide/svelte/icons/archive';
+	import FilePen from '@lucide/svelte/icons/file-pen';
 	import type { PracticeView } from '#lib/types.js';
 	import type { PageProps } from './$types';
 
@@ -129,7 +130,7 @@
 		<label class="toggle"><input type="checkbox" bind:checked={checklistMarks} onchange={changed} /> Отметка по чеклисту заметки дня</label>
 	</div>
 
-	<h2>Постоянная заметка</h2>
+	<h2 class="with-icon"><FilePen size={14} />Заметка «Всегда» — для всех дней</h2>
 	<div class="card">
 		<p class="note-line">{firstLine(note) || 'Пока пусто'}</p>
 		<button class="edit" onclick={() => (editing = true)}>Изменить заметку</button>
@@ -169,6 +170,11 @@
 		letter-spacing: 0.04em;
 		color: var(--muted);
 		margin: 22px 0 8px;
+	}
+	.with-icon {
+		display: flex;
+		align-items: center;
+		gap: 6px;
 	}
 	.card {
 		display: flex;
