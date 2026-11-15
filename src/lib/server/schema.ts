@@ -144,3 +144,20 @@ export const appSettings = sqliteTable('app_settings', {
 	key: text('key').primaryKey(),
 	value: text('value').notNull()
 });
+
+/**
+ * Spec 008 — «Входящие»: a thought written in one touch, sorted later. Only sorted, never done from here.
+ * The text is a note document (Tiptap JSON, like notes). `clientId` makes the offline queue replay safe.
+ */
+export const inboxItems = sqliteTable('inbox_items', {
+	id: integer('id').primaryKey({ autoIncrement: true }),
+	clientId: text('client_id').notNull().unique(),
+	text: text('text').notNull(),
+	createdAt: text('created_at').notNull(),
+	updatedAt: text('updated_at').notNull(),
+	/** open | done | processed | deleted */
+	status: text('status', { enum: ['open', 'done', 'processed', 'deleted'] }).notNull().default('open'),
+	closedAt: text('closed_at'),
+	/** where it was sorted to, for «История»: «Заметка «Всегда»: Итальянский», «Новая цель: …» */
+	target: text('target')
+});
