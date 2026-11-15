@@ -52,7 +52,7 @@
 <svelte:head><title>Настройки · 1%</title></svelte:head>
 
 <main>
-	<TopBar title="Старые настройки" back={{ label: 'Настройки', href: '/settings' }} />
+	<TopBar help="legacy" title="Старые настройки" back={{ label: 'Настройки', href: '/settings' }} />
 
 	{#if form?.error}<p class="error" role="alert">{form.error}</p>{/if}
 	{#if orderError}<p class="error" role="alert">{orderError}</p>{/if}

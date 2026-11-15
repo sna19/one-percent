@@ -13,6 +13,8 @@
 	import { onMount } from 'svelte';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
+	import CircleHelp from '@lucide/svelte/icons/circle-help';
+	import HelpSheet from './help/HelpSheet.svelte';
 
 	/**
 	 * Spec 007 A — one top bar for every screen: «‹ previous screen» on nested screens, a large title
@@ -28,8 +30,16 @@
 		menu?: MenuItem[];
 		/** extra row under the title (e.g. day or week arrows) */
 		below?: Snippet;
+		/** Spec 011: the help topic (src/lib/help/<topic>.md) — «?» beside the title and «Справка» in «⋯» */
+		help?: string;
 	}
-	let { title, subtitle, back, actions, menu = [], below }: Props = $props();
+	let { title, subtitle, back, actions, menu = [], below, help }: Props = $props();
+
+	let helpOpen = $state(false);
+	const openHelp = () => {
+		helpOpen = true;
+	};
+	const items: MenuItem[] = $derived(help ? [...menu, { label: 'Справка', icon: CircleHelp, onclick: openHelp }] : menu);
 
 	let compact = $state(false);
 	let menuOpen = $state(false);
@@ -49,10 +59,13 @@
 				<a class="back" href={back.href} aria-label="Назад: {back.label}"><ChevronLeft size={22} />{back.label}</a>
 			{/if}
 		</div>
-		<div class="center" aria-hidden={!compact}>{title}</div>
+		<div class="center" aria-hidden={!compact}>
+			<span class="ctitle">{title}</span>
+			{#if help}{@render helpBtn(18, !compact)}{/if}
+		</div>
 		<div class="right">
 			{@render actions?.()}
-			{#if menu.length}
+			{#if items.length}
 				<button class="icon" aria-label="Ещё действия" title="Ещё" aria-haspopup="menu" aria-expanded={menuOpen} onclick={() => (menuOpen = !menuOpen)}>
 					<Ellipsis size={22} />
 				</button>
@@ -62,7 +75,7 @@
 	{#if menuOpen}
 		<div class="scrim" role="presentation" onclick={() => (menuOpen = false)}></div>
 		<ul class="menu" role="menu">
-			{#each menu as m (m.label)}
+			{#each items as m (m.label)}
 				<li role="none">
 					{#if m.href}
 						<a role="menuitem" href={m.href} onclick={() => (menuOpen = false)}>
@@ -83,10 +96,17 @@
 	{/if}
 </div>
 <div class="large">
-	<h1>{title}</h1>
+	<h1>{title}{#if help}{@render helpBtn(20, compact)}{/if}</h1>
 	{#if subtitle}<p>{subtitle}</p>{/if}
 </div>
 {@render below?.()}
+{#if helpOpen && help}<HelpSheet topic={help} onClose={() => (helpOpen = false)} />{/if}
+
+{#snippet helpBtn(size: number, hidden: boolean)}
+	<button class="help" aria-label="Справка" title="Справка" tabindex={hidden ? -1 : 0} aria-hidden={hidden} onclick={openHelp}
+		><CircleHelp {size} /></button
+	>
+{/snippet}
 
 <style>
 	.bar {
@@ -139,6 +159,34 @@
 	}
 	.compact .center {
 		opacity: 1;
+	}
+	.center {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.ctitle {
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.bar:not(.compact) .center {
+		pointer-events: none;
+	}
+	/* Spec 011: a calm secondary «?» beside the title; the touch area is larger than the glyph */
+	.help {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 36px;
+		height: 36px;
+		margin: -6px -6px -6px 0;
+		padding: 0;
+		border: none;
+		background: none;
+		color: var(--muted);
+		vertical-align: middle;
+		cursor: pointer;
+		flex: none;
 	}
 	.right {
 		display: flex;

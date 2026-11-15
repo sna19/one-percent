@@ -492,7 +492,7 @@
 
 <main onpointerdown={tab === 'today' ? swipeStart : undefined} onpointerup={tab === 'today' ? swipeEnd : undefined}>
 	{#if tab === 'today'}
-		<TopBar
+		<TopBar help="today"
 			title={dayName(viewDay)}
 			subtitle={[dayName(viewDay) !== dayTitle(viewDay) ? dayTitle(viewDay) : '', week && day.planned && !isFutureDay ? `по плану ${day.plannedDone} из ${day.planned}` : '']
 				.filter(Boolean)
@@ -509,7 +509,7 @@
 			<div class="reorder-hint"><span>Перетаскивайте карточки за ≡</span><button onclick={() => (reorder = false)}>Готово</button></div>
 		{/if}
 	{:else if tab === 'week'}
-		<TopBar
+		<TopBar help="week"
 			title="Неделя"
 			subtitle="{label(days[0])} – {label(days[6])}"
 			menu={[
@@ -524,7 +524,7 @@
 			{/snippet}
 		</TopBar>
 	{:else}
-		<TopBar title="Всё" subtitle="{label(days[0])} – {label(days[6])}" below={weekNav}>
+		<TopBar help="all" title="Всё" subtitle="{label(days[0])} – {label(days[6])}" below={weekNav}>
 			{#snippet actions()}
 				<button
 					class="icon"

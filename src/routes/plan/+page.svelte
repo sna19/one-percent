@@ -233,7 +233,7 @@
 <svelte:head><title>План · 1%</title></svelte:head>
 
 <main>
-	<TopBar
+	<TopBar help="plan"
 		title="План недели"
 		subtitle="{label(days[0])} – {label(days[6])}"
 		back={backFrom(page.url.searchParams, 'week')}

@@ -80,7 +80,7 @@
 <svelte:head><title>{title} · Настройки</title></svelte:head>
 
 <main>
-	<TopBar title={title || 'Практика'} back={{ label: 'Настройки', href: '/settings' }} menu={[{ label: 'В архив', icon: Archive, onclick: archive }]} />
+	<TopBar help="practice" title={title || 'Практика'} back={{ label: 'Настройки', href: '/settings' }} menu={[{ label: 'В архив', icon: Archive, onclick: archive }]} />
 
 	<p class="status" aria-live="polite">
 		{saver.state.status === 'saving' ? 'Сохраняю…' : saver.state.status === 'saved' ? 'Сохранено' : saver.state.status === 'error' ? saver.state.message : ''}

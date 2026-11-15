@@ -1,4 +1,6 @@
 <script lang="ts">
+	import CircleHelp from '@lucide/svelte/icons/circle-help';
+	import HelpSheet from './help/HelpSheet.svelte';
 	import { onDestroy, onMount } from 'svelte';
 	import { Editor } from '@tiptap/core';
 	import StarterKit from '@tiptap/starter-kit';
@@ -226,10 +228,12 @@
 		save();
 	}
 
+	let helpOpen = $state(false);
 	const c = $derived(colorOf(p.color));
 	const done = $derived(amount !== undefined && amount >= p.minDose && amount > 0);
 </script>
 
+{#if helpOpen}<HelpSheet topic="note" onClose={() => (helpOpen = false)} />{/if}
 <div class="backdrop" role="presentation" onclick={close}></div>
 <div
 	class="sheet"
@@ -242,7 +246,10 @@
 			<p class="title">{p.title}</p>
 			<p class="sub">{p.goalTitle !== p.title ? `${p.goalTitle} · ` : ''}{dateLabel}</p>
 		</div>
-		<button class="done" onclick={close}>Готово</button>
+		<span class="head-btns">
+			<button class="help" aria-label="Справка" title="Справка" onclick={() => (helpOpen = true)}><CircleHelp size={20} /></button>
+			<button class="done" onclick={close}>Готово</button>
+		</span>
 	</header>
 
 	{#if showDose}
@@ -364,6 +371,22 @@
 		.sheet {
 			--c: var(--c-dark);
 		}
+	}
+	.head-btns {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+	.help {
+		width: 36px;
+		height: 36px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+		background: none;
+		color: var(--muted);
+		cursor: pointer;
 	}
 	header {
 		display: flex;

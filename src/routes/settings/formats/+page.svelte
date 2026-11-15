@@ -52,7 +52,7 @@
 <svelte:head><title>Форматы · Настройки</title></svelte:head>
 
 <main>
-	<TopBar title="Форматы" back={{ label: 'Настройки', href: '/settings' }}>
+	<TopBar help="formats" title="Форматы" back={{ label: 'Настройки', href: '/settings' }}>
 		{#snippet actions()}<button class="icon" aria-label="Добавить формат" title="Добавить" onclick={add}><Plus size={22} /></button>{/snippet}
 	</TopBar>
 	{#if error}<p class="error" role="alert">{error}</p>{/if}

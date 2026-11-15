@@ -53,7 +53,7 @@
 <svelte:head><title>Категории · Настройки</title></svelte:head>
 
 <main>
-	<TopBar title="Категории" back={{ label: 'Настройки', href: '/settings' }}>
+	<TopBar help="categories" title="Категории" back={{ label: 'Настройки', href: '/settings' }}>
 		{#snippet actions()}<button class="icon" aria-label="Добавить категорию" title="Добавить" onclick={add}><Plus size={22} /></button>{/snippet}
 	</TopBar>
 	{#if error}<p class="error" role="alert">{error}</p>{/if}

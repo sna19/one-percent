@@ -139,7 +139,7 @@
 <svelte:head><title>Настройки · 1%</title></svelte:head>
 
 <main>
-	<TopBar
+	<TopBar help="settings"
 		title="Настройки"
 		back={backFrom(page.url.searchParams)}
 		menu={[

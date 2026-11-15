@@ -22,7 +22,7 @@
 <svelte:head><title>Архив · Настройки</title></svelte:head>
 
 <main>
-	<TopBar title="Архив" back={{ label: 'Настройки', href: '/settings' }} />
+	<TopBar help="archive" title="Архив" back={{ label: 'Настройки', href: '/settings' }} />
 	<ul class="list">
 		{#each items as a (a.kind + a.id)}
 			<li class="row">
