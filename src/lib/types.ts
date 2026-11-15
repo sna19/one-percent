@@ -56,4 +56,9 @@ export interface WeekData {
 	entries: Record<number, Record<DateStr, number>>;
 	/** Spec 003: null for weeks without a plan (past weeks before planning, future weeks not planned yet). */
 	plan: PlanView | null;
+	/**
+	 * Spec 010 «Ротация: пауза по плану»: goalId → Sundays of weeks that have a plan with none of the goal's
+	 * practices in it. Such weeks do not add to «N дней без». Missing in data cached before this field.
+	 */
+	pausedWeeks?: Record<number, DateStr[]>;
 }

@@ -1,4 +1,4 @@
-import { diffDays, addDays, type DateStr } from './dates.js';
+import { diffDays, addDays, weekStart, type DateStr } from './dates.js';
 
 export interface Dose {
 	minDose: number;
@@ -23,11 +23,16 @@ export function counts(amount: number | undefined, p: Dose): boolean {
 /**
  * "N дней без": days since the last entry at or above min dose.
  * Today does not count until it is over. Never done: counted from the day the practice was created.
+ * Spec 010 «Ротация»: days of weeks where the goal was paused by plan (`paused` holds their Sundays) do not count.
  */
-export function daysWithout(lastDone: DateStr | null, createdOn: DateStr, today: DateStr): number {
+export function daysWithout(lastDone: DateStr | null, createdOn: DateStr, today: DateStr, paused?: ReadonlySet<DateStr>): number {
 	if (lastDone && lastDone >= today) return 0;
 	const ref = lastDone ?? addDays(createdOn, -1);
-	return Math.max(0, diffDays(ref, today) - 1);
+	const n = Math.max(0, diffDays(ref, today) - 1);
+	if (!paused?.size || n === 0) return n;
+	let off = 0;
+	for (let d = addDays(ref, 1); d < today; d = addDays(d, 1)) if (paused.has(weekStart(d))) off++;
+	return n - off;
 }
 
 /** "Сегодня в приоритете": the practice with the largest N among those not marked today; ties keep list order. */

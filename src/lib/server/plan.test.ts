@@ -254,3 +254,20 @@ describe('future days get no marks (Spec 007 E)', async () => {
 		expect(db.select().from(entries).all()).toHaveLength(0);
 	});
 });
+
+describe('pausedWeeks (Spec 010 «Ротация: пауза по плану»)', () => {
+	it('a goal with no practices in a week plan is paused that week; weeks without a plan are not', async () => {
+		const { pausedWeeks } = await import('./week.js');
+		const db = setup();
+		const goalOf = (id: number) => db.select().from(practices).where(eq(practices.id, id)).get()!.goalId;
+		applySource(db, W1, W1, 'empty');
+		setPlanItem(db, W1, W1, 1, '2026-11-02', true);
+		const g1 = goalOf(1);
+		const g4 = goalOf(4);
+		const p = pausedWeeks(db, [g1, g4], '2026-11-09');
+		expect(p[g1]).toBeUndefined();
+		expect(p[g4]).toEqual([W1]);
+		// no plan row for W2 yet → not a pause
+		expect(pausedWeeks(db, [g4], '2026-11-12')[g4]).toEqual([W1]);
+	});
+});

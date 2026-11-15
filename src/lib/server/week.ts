@@ -1,9 +1,9 @@
 import { and, asc, between, eq, gte, isNull, lte, max, sql } from 'drizzle-orm';
-import { addDays, type DateStr } from '../dates.js';
+import { addDays, weekStart, type DateStr } from '../dates.js';
 import type { WeekData } from '../types.js';
 import type { Db } from './db.js';
 import { ensureCurrentPlan, parseDays } from './plan.js';
-import { categories, entries, formats, goals, practices } from './schema.js';
+import { categories, entries, formats, goals, planItems, practices, weekPlans } from './schema.js';
 
 export function loadWeek(db: Db, start: DateStr, today: DateStr): WeekData {
 	const rows = db
@@ -66,6 +66,7 @@ export function loadWeek(db: Db, start: DateStr, today: DateStr): WeekData {
 		(map[e.practiceId] ??= {})[e.date] = e.amount;
 	}
 
+	const plan = ensureCurrentPlan(db, start, today);
 	return {
 		start,
 		practices: rows.map((r) => ({
@@ -75,6 +76,35 @@ export function loadWeek(db: Db, start: DateStr, today: DateStr): WeekData {
 			lastDone: last.get(r.id) ?? null
 		})),
 		entries: map,
-		plan: ensureCurrentPlan(db, start, today)
+		plan,
+		pausedWeeks: pausedWeeks(db, [...new Set(rows.map((r) => r.goalId))], today)
 	};
+}
+
+/**
+ * Spec 010 «Ротация: пауза по плану»: for each goal, the weeks up to today's that have a plan with none of the
+ * goal's practices in it. Weeks without a plan row (before planning started) are not pauses.
+ */
+export function pausedWeeks(db: Db, goalIds: number[], today: DateStr): Record<number, DateStr[]> {
+	const weeks = db
+		.select({ start: weekPlans.weekStart })
+		.from(weekPlans)
+		.where(lte(weekPlans.weekStart, weekStart(today)))
+		.all()
+		.map((r) => r.start);
+	const inPlan = new Set(
+		db
+			.selectDistinct({ start: weekPlans.weekStart, goalId: practices.goalId })
+			.from(planItems)
+			.innerJoin(weekPlans, eq(weekPlans.id, planItems.weekPlanId))
+			.innerJoin(practices, eq(practices.id, planItems.practiceId))
+			.all()
+			.map((r) => `${r.goalId}|${r.start}`)
+	);
+	const out: Record<number, DateStr[]> = {};
+	for (const g of goalIds) {
+		const paused = weeks.filter((w) => !inPlan.has(`${g}|${w}`));
+		if (paused.length) out[g] = paused;
+	}
+	return out;
 }

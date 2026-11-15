@@ -264,7 +264,10 @@
 		expanded = expanded === id ? null : id;
 	}
 
-	const nOf = (p: PracticeView) => daysWithout(p.lastDone, p.createdOn, today);
+	// Spec 010 «Ротация»: weeks where a goal had no practices in the plan do not add to «N дней без»
+	const paused = $derived(new Map(Object.entries(week?.pausedWeeks ?? {}).map(([g, ws]) => [Number(g), new Set(ws)])));
+	const pausedOf = (goalId: number) => paused.get(goalId);
+	const nOf = (p: PracticeView) => daysWithout(p.lastDone, p.createdOn, today, pausedOf(p.goalId));
 	// Priority is chosen among goals; in the plan view only among goals planned for today.
 	const top = $derived(
 		priority(
@@ -273,7 +276,7 @@
 				.map((g, i) => ({
 					id: i,
 					title: g.title,
-					n: groupDaysWithout(g, today),
+					n: groupDaysWithout(g, today, pausedOf),
 					doneToday: g.practices.some((p) => p.lastDone === today)
 				}))
 		)
@@ -582,7 +585,7 @@
 					{@render practiceRow(p, g.title, p.title !== g.title ? p.title : '', false)}
 				{:else}
 					{@const isOpen = open.includes(g.key)}
-					{@const n = groupDaysWithout(g, today)}
+					{@const n = groupDaysWithout(g, today, pausedOf)}
 					<button class="name group" onclick={() => toggle(g.key)} aria-expanded={isOpen}>
 						<svg class="chev" class:open={isOpen} viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 1.5 7 5 3.5 8.5" /></svg>
 						<span class="gtext">

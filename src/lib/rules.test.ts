@@ -55,3 +55,14 @@ describe('dates', () => {
 		expect(addDays('2026-12-31', 1)).toBe('2027-01-01');
 	});
 });
+
+describe('daysWithout with a pause by plan (Spec 010 «Ротация»)', () => {
+	it('does not count days of paused weeks', () => {
+		// week B (Nov 1–7) paused: last done Oct 31 (Sat), today Nov 9 (Mon) → only Nov 8 counts
+		expect(daysWithout('2026-10-31', '2026-01-01', '2026-11-09')).toBe(8);
+		expect(daysWithout('2026-10-31', '2026-01-01', '2026-11-09', new Set(['2026-11-01']))).toBe(1);
+	});
+	it('stops while the current week is paused', () => {
+		expect(daysWithout('2026-10-31', '2026-01-01', '2026-11-05', new Set(['2026-11-01']))).toBe(0);
+	});
+});

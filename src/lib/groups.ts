@@ -48,11 +48,19 @@ export function groupCell(g: Group, date: DateStr, amountOf: AmountOf): GroupCel
 	return { ...best, done };
 }
 
-/** "N дней без" for a group: since the last mark of any of its practices. */
-export function groupDaysWithout(g: Group, today: DateStr): number {
+/**
+ * "N дней без" for a group: since the last mark of any of its practices.
+ * A week counts as paused for the group only when every goal in it was paused by plan that week.
+ */
+export function groupDaysWithout(g: Group, today: DateStr, pausedOf?: (goalId: number) => ReadonlySet<DateStr> | undefined): number {
 	const last = g.practices.reduce<DateStr | null>((m, p) => (p.lastDone && (!m || p.lastDone > m) ? p.lastDone : m), null);
 	const created = g.practices.reduce((m, p) => (p.createdOn < m ? p.createdOn : m), g.practices[0].createdOn);
-	return daysWithout(last, created, today);
+	return daysWithout(last, created, today, pausedOf && commonPaused([...new Set(g.practices.map((p) => p.goalId))].map(pausedOf)));
+}
+
+function commonPaused(sets: (ReadonlySet<DateStr> | undefined)[]): Set<DateStr> {
+	const [first, ...rest] = sets;
+	return new Set([...(first ?? [])].filter((w) => rest.every((s) => s?.has(w))));
 }
 
 /** Day score is always by goals: goals with any practice at min dose, out of active goals. */
