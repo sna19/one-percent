@@ -95,4 +95,11 @@ describe('reorder', async () => {
 		expect(moveTo([1, 2, 3, 4], 1, 2)).toEqual([2, 3, 1, 4]);
 		expect(moveTo([1, 2, 3], 2, 9)).toEqual([1, 3, 2]);
 	});
+	it('a goal paused by plan last week does not win priority for the pause (Spec 010 «Ротация»)', () => {
+		// goal2 last done Nov 2; week Nov 1–7 paused → only Nov 8 counts (N=1); goal3 last done Nov 7 → N=1, first in list wins ties
+		const paused = new Map([[2, new Set(['2026-11-01'])]]);
+		const p3 = practices.map((p) => (p.id === 3 ? { ...p, lastDone: '2026-11-06' } : p)); // N=2
+		expect(todayLists(p3, T, isPlanned, amountOf).top).toBe('goal2');
+		expect(todayLists(p3, T, isPlanned, amountOf, (g) => paused.get(g)).top).toBe('goal3');
+	});
 });

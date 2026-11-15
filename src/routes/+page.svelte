@@ -128,7 +128,7 @@
 	const isFutureDay = $derived(viewDay > today);
 	const minDay = $derived(weekStart(today));
 	const maxDay = $derived(addDays(weekStart(today), 13));
-	const day = $derived(todayLists(practices, viewDay, isPlanned, amountOf));
+	const day = $derived(todayLists(practices, viewDay, isPlanned, amountOf, pausedOf));
 	// #12: «Сделать что-то ещё» — recommended first as their own list, the rest as the settings tree
 	const recommended = $derived(day.other.filter((p) => p.recommended));
 	const otherTree = $derived(treeOfPractices(day.other.filter((p) => !p.recommended)));

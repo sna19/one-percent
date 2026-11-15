@@ -22,7 +22,9 @@ export function todayLists(
 	practices: PracticeView[],
 	today: DateStr,
 	isPlanned: IsPlanned,
-	amountOf: AmountOf
+	amountOf: AmountOf,
+	/** Spec 010 «Ротация»: weeks the goal was paused by plan do not add to its N */
+	pausedOf?: (goalId: number) => ReadonlySet<DateStr> | undefined
 ): TodayLists {
 	const todo: PracticeView[] = [];
 	const done: TodayLists['done'] = [];
@@ -46,7 +48,8 @@ export function todayLists(
 			// the goal's whole history, not only today's unfinished practices
 			n: groupDaysWithout(
 				{ ...g, practices: practices.filter((p) => p.goalId === g.practices[0].goalId) },
-				today
+				today,
+				pausedOf
 			),
 			doneToday: false
 		}))
