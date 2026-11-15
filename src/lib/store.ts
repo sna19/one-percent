@@ -1,6 +1,7 @@
 import { createStore, get, set, del, entries as idbEntries } from 'idb-keyval';
 import type { WeekData } from './types.js';
 import type { NoteDoc } from './note.js';
+import type { InboxItemView } from './inbox.js';
 
 /**
  * Offline layer. Weeks are cached as last seen; marks go to a queue keyed by practice+date,
@@ -32,6 +33,22 @@ export const pendingDayNotes = async (): Promise<DayNoteEdit[]> =>
 	(await idbEntries<string, DayNoteEdit>(dayNotesQueue).catch(() => [])).map(([, n]) => n);
 export const pendingNotes = async (): Promise<NoteEdit[]> =>
 	(await idbEntries<number, NoteEdit>(notesQueue).catch(() => [])).map(([, n]) => n);
+
+/** Spec 008: inbox writes wait in the same flush as marks; the server ignores a repeated clientId. */
+const inboxQueue = createStore('one-percent-inbox', 'items');
+export interface InboxWrite {
+	clientId: string;
+	text: NoteDoc;
+	createdAt: string;
+}
+export const enqueueInbox = (w: InboxWrite) => set(w.clientId, w, inboxQueue);
+export const dropInbox = (clientId: string) => del(clientId, inboxQueue).catch(() => {});
+export const pendingInbox = async (): Promise<InboxWrite[]> =>
+	(await idbEntries<string, InboxWrite>(inboxQueue).catch(() => [])).map(([, w]) => w);
+/** The last inbox list seen, for the screen and the tab counter without network. */
+const inboxCache = createStore('one-percent-inbox-cache', 'list');
+export const cachedInbox = () => get<InboxItemView[]>('open', inboxCache).catch(() => undefined);
+export const cacheInbox = (open: InboxItemView[]) => set('open', open, inboxCache).catch(() => {});
 
 export interface Mark {
 	practiceId: number;
@@ -67,6 +84,16 @@ export function flush(): Promise<number> {
 					if (cur && cur.amount === m.amount) await del(key(m), queue);
 				} else break;
 			}
+			for (const w of await pendingInbox()) {
+				const r = await fetch('/api/inbox', {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ action: 'create', ...w })
+				}).catch(() => undefined);
+				if (!r) break;
+				if (r.ok || r.status === 400) await del(w.clientId, inboxQueue);
+				else break;
+			}
 			for (const n of await pendingNotes()) {
 				const r = await fetch('/api/note', {
 					method: 'PUT',
@@ -95,7 +122,7 @@ export function flush(): Promise<number> {
 		} finally {
 			flushing = undefined;
 		}
-		return (await pending()).length + (await pendingNotes()).length + (await pendingDayNotes()).length;
+		return (await pending()).length + (await pendingNotes()).length + (await pendingDayNotes()).length + (await pendingInbox()).length;
 	})();
 	return flushing;
 }

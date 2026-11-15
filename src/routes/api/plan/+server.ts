@@ -14,6 +14,7 @@ import {
 	type PlanSource
 } from '#lib/server/plan.js';
 import { InputError } from '#lib/server/settings.js';
+import { openCount } from '#lib/server/inbox.js';
 import { isDateStr, weekStart } from '#lib/dates.js';
 import { loadWeek } from '#lib/server/week.js';
 
@@ -32,7 +33,9 @@ function plannerData(start: string, today: string) {
 		plan: week.plan ?? getPlan(db, start),
 		templates: listTemplates(db).filter((t) => !t.archivedAt),
 		pastWeeks: pastWeeks(db, start),
-		limit: getPlanLimit(db)
+		limit: getPlanLimit(db),
+		/** Spec 008: planning starts with the inbox */
+		inboxOpen: openCount(db)
 	};
 }
 

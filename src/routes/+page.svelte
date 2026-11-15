@@ -20,6 +20,9 @@
 	import NoteSheet from '#lib/NoteSheet.svelte';
 	import TopBar from '#lib/TopBar.svelte';
 	import TabBar from '#lib/TabBar.svelte';
+	import QuickCapture from '#lib/inbox/QuickCapture.svelte';
+	import InboxScreen from '#lib/inbox/InboxScreen.svelte';
+	import { inbox } from '#lib/inbox/state.svelte.js';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import GripVertical from '@lucide/svelte/icons/grip-vertical';
 	import Pencil from '@lucide/svelte/icons/pencil';
@@ -88,9 +91,10 @@
 	 * Spec 004: three tabs. «Сегодня» always opens first (not remembered, so a morning starts on the
 	 * working screen); «Неделя» is the plan view of Spec 003; «Всё» holds the goal / format lens.
 	 */
-	type Tab = 'today' | 'week' | 'all';
+	type Tab = 'inbox' | 'today' | 'week' | 'all';
 	type View = 'plan' | Lens;
 	let tab = $state<Tab>('today');
+	let capture: QuickCapture;
 	let allLens = $state<Lens>(read('all-lens', 'goal'));
 	const lens = $derived<View>(tab === 'week' ? 'plan' : allLens);
 	let open = $state<string[]>(read('open-groups', []));
@@ -463,8 +467,9 @@
 
 	onMount(() => {
 		const q = new URLSearchParams(location.search).get('tab');
-		if (q === 'week' || q === 'all') tab = q;
+		if (q === 'week' || q === 'all' || q === 'inbox') tab = q;
 		load();
+		inbox.init(today);
 		const refresh = () => {
 			const t = todayStr();
 			if (t !== today) {
@@ -474,6 +479,7 @@
 			}
 			flush().then((n) => (queued = n));
 			load();
+			inbox.load(today);
 		};
 		const onVis = () => document.visibilityState === 'visible' && refresh();
 		document.addEventListener('visibilitychange', onVis);
@@ -492,7 +498,7 @@
 
 <main onpointerdown={tab === 'today' ? swipeStart : undefined} onpointerup={tab === 'today' ? swipeEnd : undefined}>
 	{#if tab === 'today'}
-		<TopBar help="today"
+		<TopBar help="today" onAdd={() => capture.show()}
 			title={dayName(viewDay)}
 			subtitle={[dayName(viewDay) !== dayTitle(viewDay) ? dayTitle(viewDay) : '', week && day.planned && !isFutureDay ? `по плану ${day.plannedDone} из ${day.planned}` : '']
 				.filter(Boolean)
@@ -509,7 +515,7 @@
 			<div class="reorder-hint"><span>Перетаскивайте карточки за ≡</span><button onclick={() => (reorder = false)}>Готово</button></div>
 		{/if}
 	{:else if tab === 'week'}
-		<TopBar help="week"
+		<TopBar help="week" onAdd={() => capture.show()}
 			title="Неделя"
 			subtitle="{label(days[0])} – {label(days[6])}"
 			menu={[
@@ -523,8 +529,8 @@
 				<a class="icon" href="/settings?from=week" aria-label="Настройки" title="Настройки"><SettingsIcon size={22} /></a>
 			{/snippet}
 		</TopBar>
-	{:else}
-		<TopBar help="all" title="Всё" subtitle="{label(days[0])} – {label(days[6])}" below={weekNav}>
+	{:else if tab === 'all'}
+		<TopBar help="all" onAdd={() => capture.show()} title="Всё" subtitle="{label(days[0])} – {label(days[6])}" below={weekNav}>
 			{#snippet actions()}
 				<button
 					class="icon"
@@ -537,13 +543,19 @@
 			{/snippet}
 		</TopBar>
 		<p class="lens-label">{allLens === 'goal' ? 'По целям' : 'По форматам'}</p>
+	{:else}
+		<TopBar help="inbox" title="Входящие" subtitle={inbox.count ? `неразобранных: ${inbox.count}` : ''} onAdd={() => capture.show()} />
 	{/if}
 
-	{#if offline && week}
+	{#if tab === 'inbox'}
+		<InboxScreen {practices} {today} onChanged={() => load()} />
+	{:else if offline && week}
 		<p class="status">{problem ?? 'Нет связи'}{queued ? ` · не отправлено: ${queued}` : ''}</p>
 	{/if}
 
-	{#if !week}
+	{#if tab === 'inbox'}
+		<!-- Spec 008: the inbox has its own screen above -->
+	{:else if !week}
 		<div class="status">
 			{#if problem}
 				<p>{problem}</p>
@@ -639,7 +651,8 @@
 		{/if}
 	{/if}
 </main>
-<TabBar {tab} onselect={(t) => setTab(t)} />
+<TabBar {tab} inboxCount={inbox.count} onselect={(t) => setTab(t)} />
+<QuickCapture bind:this={capture} />
 
 {#snippet dayNav()}
 	<div class="weeknav">

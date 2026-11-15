@@ -25,6 +25,7 @@
 		templates: { id: number; name: string }[];
 		pastWeeks: ({ weekStart: string } & WeekSummary)[];
 		limit: number | null;
+		inboxOpen?: number;
 	}
 
 	const DAY_NAMES = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
@@ -243,6 +244,9 @@
 		]}
 	/>
 
+	{#if data?.inboxOpen}
+		<a class="inbox-banner" href="/?tab=inbox">Во входящих {data.inboxOpen} {data.inboxOpen % 10 === 1 && data.inboxOpen % 100 !== 11 ? 'запись' : [2, 3, 4].includes(data.inboxOpen % 10) && ![12, 13, 14].includes(data.inboxOpen % 100) ? 'записи' : 'записей'} — разобрать</a>
+	{/if}
 	{#if error}<p class="error" role="alert">{error}</p>{/if}
 
 	{#if done}
@@ -428,6 +432,17 @@
 {/if}
 
 <style>
+	/* Spec 008: planning starts with the inbox */
+	.inbox-banner {
+		display: block;
+		margin: 4px 0 12px;
+		padding: 12px 14px;
+		border-radius: 12px;
+		background: var(--surface);
+		color: var(--text);
+		text-decoration: none;
+		font-size: 15px;
+	}
 	main {
 		max-width: 560px;
 		margin: 0 auto;

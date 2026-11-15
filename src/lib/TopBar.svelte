@@ -14,6 +14,7 @@
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import CircleHelp from '@lucide/svelte/icons/circle-help';
+	import Plus from '@lucide/svelte/icons/plus';
 	import HelpSheet from './help/HelpSheet.svelte';
 
 	/**
@@ -32,8 +33,10 @@
 		below?: Snippet;
 		/** Spec 011: the help topic (src/lib/help/<topic>.md) — «?» beside the title and «Справка» in «⋯» */
 		help?: string;
+		/** Spec 008: «+» quick capture into the inbox, on the root screens (left side, free there) */
+		onAdd?: () => void;
 	}
-	let { title, subtitle, back, actions, menu = [], below, help }: Props = $props();
+	let { title, subtitle, back, actions, menu = [], below, help, onAdd }: Props = $props();
 
 	let helpOpen = $state(false);
 	const openHelp = () => {
@@ -57,6 +60,8 @@
 		<div class="left">
 			{#if back}
 				<a class="back" href={back.href} aria-label="Назад: {back.label}"><ChevronLeft size={22} />{back.label}</a>
+			{:else if onAdd}
+				<button class="icon" aria-label="Записать во входящие" title="Во входящие" onclick={onAdd}><Plus size={24} /></button>
 			{/if}
 		</div>
 		<div class="center" aria-hidden={!compact}>

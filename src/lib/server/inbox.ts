@@ -7,6 +7,7 @@ import { planItems, practices, goals, weekPlans, inboxItems } from './schema.js'
 import { InputError, createGoal, createPractice } from './settings.js';
 import { setPlanItem } from './plan.js';
 import { plainToDoc } from '../inbox.js';
+import { dayTitle } from '../today.js';
 
 /** Spec 008 — «Входящие»: write in one touch, sort later. */
 
@@ -136,7 +137,7 @@ export function toDayNote(db: Db, id: number, practiceId: number, date: DateStr,
 		const json = JSON.stringify(note);
 		if (json.length > NOTE_MAX) throw new InputError('Заметка станет слишком длинной');
 		t.update(planItems).set({ note: json, noteUpdatedAt: new Date().toISOString() }).where(eq(planItems.id, pi.id)).run();
-		close(t, id, 'processed', `Заметка дня ${date}: ${p.title}`);
+		close(t, id, 'processed', `Заметка дня, ${dayTitle(date)}: ${p.title}`);
 	});
 }
 
