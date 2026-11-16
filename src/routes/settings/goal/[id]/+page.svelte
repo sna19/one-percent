@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { backFrom } from '#lib/back.js';
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Link2 from '@lucide/svelte/icons/link-2';
 	import { onDestroy, untrack } from 'svelte';
 	import TopBar from '#lib/TopBar.svelte';
 	import { autosaver } from '#lib/autosave.svelte.js';
@@ -72,6 +74,44 @@
 
 	const categories = $derived(data.categories.filter((c) => !c.archivedAt || c.id === g0.categoryId));
 	const practices = $derived(data.practices.filter((p) => p.goalId === g0.id && !p.archivedAt));
+
+	// #22: add practices from the goal; the practice screen comes back here
+	const from = page.url.searchParams.get('from');
+	const practiceQuery = `goal=${g0.id}${from ? `&from=${from}` : ''}`;
+	let attaching = $state(false);
+	let addError = $state<string | null>(null);
+	const others = $derived(
+		data.goals
+			.filter((g) => g.id !== g0.id && !g.archivedAt)
+			.map((g) => ({ goal: g, practices: data.practices.filter((p) => p.goalId === g.id && !p.archivedAt) }))
+			.filter((o) => o.practices.length)
+	);
+	async function post(action: string, body: Record<string, unknown>) {
+		const r = await fetch(`/api/settings/${action}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => undefined);
+		const j = await r?.json().catch(() => null);
+		if (!r?.ok) throw new Error(j?.message ?? 'Нет связи с сервером');
+		return j;
+	}
+	async function addPractice() {
+		addError = null;
+		try {
+			await saver.flush();
+			const { id } = await post('newPractice', { goalId: g0.id });
+			goto(`/settings/practice/${id}?new=1&${practiceQuery}`);
+		} catch (e) {
+			addError = (e as Error).message;
+		}
+	}
+	async function attach(p: { id: number; title: string }, fromGoal: string) {
+		if (!confirm(`Перенести «${p.title}» из цели «${fromGoal}» в «${title}»? Отметки и заметки переедут вместе с ней.`)) return;
+		try {
+			await post('attach', { id: p.id, goalId: g0.id });
+			attaching = false;
+			await invalidateAll();
+		} catch (e) {
+			addError = (e as Error).message;
+		}
+	}
 
 	async function archive() {
 		await saver.flush();
@@ -193,11 +233,39 @@
 	<h2>Практики цели</h2>
 	<ul class="list">
 		{#each practices as p (p.id)}
-			<li><a href="/settings/practice/{p.id}">{p.title}</a></li>
+			<li><a href="/settings/practice/{p.id}?{practiceQuery}">{p.title}</a></li>
 		{:else}
 			<li class="empty">Пока нет</li>
 		{/each}
 	</ul>
+	<!-- #22: the goal is widened here — new practices and existing ones are added from the goal itself -->
+	<div class="add-row">
+		<button onclick={addPractice}><Plus size={18} />Практика</button>
+		<button onclick={() => (attaching = true)}><Link2 size={18} />Привязать существующую</button>
+	</div>
+	{#if addError}<p class="status" role="alert">{addError}</p>{/if}
+
+	{#if attaching}
+		<div class="backdrop" role="presentation" onclick={() => (attaching = false)}></div>
+		<div class="sheet" role="dialog" aria-label="Привязать практику">
+			<header>
+				<span class="sheet-title">Привязать к «{title}»</span>
+				<button class="done" onclick={() => (attaching = false)}>Готово</button>
+			</header>
+			<div class="sheet-body">
+				{#each others as o (o.goal.id)}
+					<p class="from">{o.goal.title}</p>
+					<ul class="list">
+						{#each o.practices as p (p.id)}
+							<li><button class="pick" onclick={() => attach(p, o.goal.title)}>{p.title}</button></li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="status">Других практик нет.</p>
+				{/each}
+			</div>
+		</div>
+	{/if}
 
 	{#if ms?.history.length}
 		<h2>История майлстонов</h2>
@@ -282,6 +350,85 @@
 	}
 	.empty {
 		color: var(--muted);
+	}
+	.add-row {
+		display: flex;
+		gap: 8px;
+		margin-top: 8px;
+	}
+	.add-row button {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		min-height: 44px;
+		padding: 0 12px;
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		background: var(--surface);
+		color: var(--text);
+		font: inherit;
+		font-size: 15px;
+		cursor: pointer;
+	}
+	.backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 20;
+		background: rgb(0 0 0 / 0.35);
+	}
+	.sheet {
+		position: fixed;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 21;
+		max-width: 560px;
+		max-height: 75vh;
+		margin: 0 auto;
+		display: flex;
+		flex-direction: column;
+		padding: 8px 16px calc(env(safe-area-inset-bottom) + 12px);
+		background: var(--bg);
+		border-radius: 16px 16px 0 0;
+	}
+	.sheet header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		min-height: 44px;
+	}
+	.sheet-title {
+		font-weight: 700;
+	}
+	.done {
+		border: none;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.sheet-body {
+		overflow-y: auto;
+	}
+	.from {
+		margin: 10px 0 4px;
+		font-size: 12px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--muted);
+	}
+	.pick {
+		width: 100%;
+		min-height: 44px;
+		padding: 0 14px;
+		border: none;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
 	}
 	.image {
 		display: flex;

@@ -258,3 +258,15 @@ export function applyTreeDrop(
 		if (drop.goalOrder) setOrder(t, 'goal', drop.goalOrder);
 	});
 }
+
+/**
+ * #22 — «Привязать существующую»: the practice moves to this goal with its marks, notes and plan.
+ * Its place in the common order stays.
+ */
+export function attachPractice(db: Db, practiceId: number, goalId: number) {
+	const p = db.select().from(practices).where(eq(practices.id, practiceId)).get();
+	if (!p || p.archivedAt) throw new InputError('Практика не найдена');
+	const g = db.select().from(goals).where(eq(goals.id, goalId)).get();
+	if (!g || g.archivedAt) throw new InputError('Цель не найдена');
+	db.update(practices).set({ goalId }).where(eq(practices.id, practiceId)).run();
+}

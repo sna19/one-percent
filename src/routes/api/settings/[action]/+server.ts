@@ -2,6 +2,7 @@ import { error, json } from '@sveltejs/kit';
 import { getDb } from '#lib/server/db.js';
 import {
 	applyTreeDrop,
+	attachPractice,
 	createGoal,
 	createPractice,
 	InputError,
@@ -38,6 +39,10 @@ export async function POST({ params, request }) {
 	try {
 		if (params.action === 'newPractice') return json({ ok: true, id: createPractice(getDb(), Number(b.goalId)) });
 		if (params.action === 'newGoal') return json({ ok: true, id: createGoal(getDb(), Number(b.categoryId)) });
+		if (params.action === 'attach') {
+			attachPractice(getDb(), Number(b.id), Number(b.goalId));
+			return json({ ok: true });
+		}
 		if (params.action === 'tree') {
 			applyTreeDrop(getDb(), b);
 			return json({ ok: true });

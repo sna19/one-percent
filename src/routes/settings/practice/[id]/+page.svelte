@@ -15,6 +15,14 @@
 
 	/** Spec 007 C — one practice on its own screen; every change saves itself. */
 	let { data }: PageProps = $props();
+	// #22: opened from a goal screen («+ Практика» or its list) — back to that goal
+	const backLink = $derived.by(() => {
+		const q = page.url.searchParams;
+		const gid = Number(q.get('goal'));
+		const g = gid ? data.goals.find((x) => x.id === gid) : undefined;
+		if (g) return { label: g.title, href: `/settings/goal/${g.id}${q.get('from') ? `?from=${q.get('from')}` : ''}` };
+		return q.get('from') ? backFrom(q) : { label: 'Настройки', href: '/settings' };
+	});
 	// the form starts from the loaded values once; later it is the source of truth
 	const p0 = untrack(() => data.practice);
 
@@ -83,7 +91,7 @@
 <svelte:head><title>{title} · Настройки</title></svelte:head>
 
 <main>
-	<TopBar help="practice" title={title || 'Практика'} back={page.url.searchParams.get('from') ? backFrom(page.url.searchParams) : { label: 'Настройки', href: '/settings' }} menu={[{ label: 'В архив', icon: Archive, onclick: archive }]} />
+	<TopBar help="practice" title={title || 'Практика'} back={backLink} menu={[{ label: 'В архив', icon: Archive, onclick: archive }]} />
 
 	<p class="status" aria-live="polite">
 		{saver.state.status === 'saving' ? 'Сохраняю…' : saver.state.status === 'saved' ? 'Сохранено' : saver.state.status === 'error' ? saver.state.message : ''}

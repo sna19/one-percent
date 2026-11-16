@@ -161,3 +161,20 @@ describe('setRecommended (task 12)', () => {
 		expect(() => setRecommended(db, form({ id: 999, on: 'on' }))).toThrow(InputError);
 	});
 });
+
+describe('#22 attach a practice to a goal', () => {
+	it('moves the practice with its history; refuses archived ones', async () => {
+		const { openDb } = await import('./db.js');
+		const { seedIfEmpty } = await import('./seed.js');
+		const { attachPractice } = await import('./settings.js');
+		const { practices } = await import('./schema.js');
+		const { eq } = await import('drizzle-orm');
+		const { db } = openDb(':memory:');
+		seedIfEmpty(db);
+		const g4 = db.select().from(practices).where(eq(practices.id, 4)).get()!.goalId;
+		attachPractice(db, 1, g4);
+		expect(db.select().from(practices).where(eq(practices.id, 1)).get()!.goalId).toBe(g4);
+		db.update(practices).set({ archivedAt: 'x' }).where(eq(practices.id, 2)).run();
+		expect(() => attachPractice(db, 2, g4)).toThrow();
+	});
+});
