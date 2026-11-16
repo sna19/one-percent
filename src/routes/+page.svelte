@@ -35,6 +35,7 @@
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Star from '@lucide/svelte/icons/star';
 	import Flag from '@lucide/svelte/icons/flag';
+	import MilestoneCheck from '#lib/milestone/MilestoneCheck.svelte';
 	import { amountLabel, budgetLabel, remaining, todayAdds } from '#lib/milestones.js';
 	import FilePen from '@lucide/svelte/icons/file-pen';
 	import NoteHead from '#lib/NoteHead.svelte';
@@ -137,6 +138,11 @@
 	// Spec 010 «Ротация»: weeks where a goal had no practices in the plan do not add to «N дней без»
 	const paused = $derived(new Map(Object.entries(week?.pausedWeeks ?? {}).map(([g, ws]) => [Number(g), new Set(ws)])));
 	const pausedOf = (goalId: number) => paused.get(goalId);
+	const dueCheck = $derived(
+		Object.values(week?.milestones ?? {})
+			.filter((m) => m.dueDate && m.dueDate <= today && (!m.snoozedUntil || m.snoozedUntil <= today))
+			.sort((a, b) => a.dueDate!.localeCompare(b.dueDate!))[0]
+	);
 	const day = $derived(todayLists(practices, viewDay, isPlanned, amountOf, pausedOf));
 	// #12: «Сделать что-то ещё» — recommended first as their own list, the rest as the settings tree
 	const recommended = $derived(day.other.filter((p) => p.recommended));
@@ -727,6 +733,12 @@
 {/if}
 
 {#snippet todayScreen()}
+	{#if viewDay === today && dueCheck}
+		<!-- Spec 009 E: one milestone at a time whose date has come -->
+		{#key dueCheck.id}
+			<div class="due-card"><MilestoneCheck m={dueCheck} {today} onToday onChanged={() => load()} /></div>
+		{/key}
+	{/if}
 	{#if day.planned}
 		{#if viewDay === today}
 			<p class="priority today-top">
@@ -787,6 +799,10 @@
 			{#if otherTree.length}
 				<div class="other-tree">
 					<Tree tree={otherTree} storageKey="today-tree-collapsed">
+						{#snippet goalExtra(g)}
+							<!-- Spec 009 B in the tree: the goal line sits on the goal's heading, once for its cards -->
+							{@render mline(g.id, '')}
+						{/snippet}
 						{#snippet practice(p)}
 							{@render card(p, false, 'tree', [])}
 						{/snippet}
@@ -848,7 +864,7 @@
 			>
 				<span class="ctitle">{p.title}{#if bonus}<span class="tag">бонус</span>{/if}</span>
 			</button>
-			{@render mline(p.goalId, p.goalTitle !== p.title && list !== 'tree' ? p.goalTitle : '')}
+			{#if list !== 'tree'}{@render mline(p.goalId, p.goalTitle !== p.title ? p.goalTitle : '')}{/if}
 			</div>
 			{#if list === 'other' || list === 'tree'}{@render star(p)}{/if}
 			<span class="dose" class:count={auto}
@@ -1425,6 +1441,13 @@
 			opacity: 0;
 			transform: translate(-50%, 8px);
 		}
+	}
+	.due-card {
+		margin: 4px 0 12px;
+		padding: 14px;
+		border-radius: 14px;
+		background: var(--surface);
+		border: 1px solid var(--line);
 	}
 	.chead-col {
 		display: flex;

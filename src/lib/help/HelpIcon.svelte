@@ -19,6 +19,7 @@
 	import History from '@lucide/svelte/icons/history';
 	import CircleHelp from '@lucide/svelte/icons/circle-help';
 	import InboxIcon from '@lucide/svelte/icons/inbox';
+	import Flag from '@lucide/svelte/icons/flag';
 	import type { Component } from 'svelte';
 	import DayIcon from '../DayIcon.svelte';
 	import { todayStr } from '../dates.js';
@@ -45,7 +46,8 @@
 		expand: ChevronsUpDown,
 		history: History,
 		help: CircleHelp,
-		inbox: InboxIcon
+		inbox: InboxIcon,
+		flag: Flag
 	};
 	const Icon = $derived(MAP[name]);
 </script>
