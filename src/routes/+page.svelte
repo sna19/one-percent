@@ -1481,6 +1481,11 @@
 		color: inherit;
 		text-decoration: none;
 		white-space: nowrap;
+		/* #18: a 44 pt tall touch area without making the card taller */
+		padding: 14px 8px 14px 0;
+		margin: -14px -8px -14px 0;
+		position: relative;
+		z-index: 1;
 	}
 	.mline .mgoal {
 		overflow: hidden;
