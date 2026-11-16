@@ -178,3 +178,24 @@ describe('#22 attach a practice to a goal', () => {
 		expect(() => attachPractice(db, 2, g4)).toThrow();
 	});
 });
+
+describe('#23 a formatted «Зачем»', () => {
+	it('keeps a long note document; plain text stays plain', async () => {
+		const { openDb } = await import('./db.js');
+		const { seedIfEmpty } = await import('./seed.js');
+		const { saveGoal } = await import('./settings.js');
+		const { goals } = await import('./schema.js');
+		const { eq } = await import('drizzle-orm');
+		const { db } = openDb(':memory:');
+		seedIfEmpty(db);
+		const g = db.select().from(goals).get()!;
+		const doc = { type: 'doc', content: Array.from({ length: 20 }, (_, i) => ({ type: 'paragraph', content: [{ type: 'text', text: `строка ${i}`, marks: [{ type: 'bold' }] }] })) };
+		const f = new FormData();
+		f.set('id', String(g.id));
+		f.set('title', g.title);
+		f.set('categoryId', String(g.categoryId));
+		f.set('direction', JSON.stringify(doc));
+		saveGoal(db, f);
+		expect(JSON.parse(db.select().from(goals).where(eq(goals.id, g.id)).get()!.direction).content).toHaveLength(20);
+	});
+});

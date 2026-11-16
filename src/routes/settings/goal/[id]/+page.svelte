@@ -10,6 +10,8 @@
 	import Archive from '@lucide/svelte/icons/archive';
 	import Flag from '@lucide/svelte/icons/flag';
 	import GoalImage from '#lib/GoalImage.svelte';
+	import RichEditor from '#lib/RichEditor.svelte';
+	import { richDoc } from '#lib/note.js';
 	import GoalImagePicker from '#lib/GoalImagePicker.svelte';
 	import { onMount } from 'svelte';
 	import NoteView from '#lib/NoteView.svelte';
@@ -160,7 +162,20 @@
 				{#each categories as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
 			</select>
 		</label>
-		<label>Направление — зачем <textarea bind:value={direction} oninput={changed} rows="2"></textarea></label>
+		<div class="field">
+			<span class="flabel">Направление — зачем</span>
+			<!-- #23: the same editor as notes; plain text written before opens as paragraphs -->
+			<RichEditor
+				grow
+				label="Зачем"
+				placeholder="Зачем тебе эта цель?"
+				doc={richDoc(direction)}
+				onChange={(d) => {
+					direction = d ? JSON.stringify(d) : '';
+					changed();
+				}}
+			/>
+		</div>
 	</div>
 
 	<h2 class="with-icon"><Flag size={14} />Майлстон</h2>
@@ -315,8 +330,7 @@
 		color: var(--muted);
 	}
 	input,
-	select,
-	textarea {
+	select {
 		font: inherit;
 		font-size: 17px;
 		min-height: 44px;
@@ -349,6 +363,15 @@
 		text-decoration: none;
 	}
 	.empty {
+		color: var(--muted);
+	}
+	.field {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.flabel {
+		font-size: 13px;
 		color: var(--muted);
 	}
 	.add-row {

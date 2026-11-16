@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { addDays, type DateStr } from '../dates.js';
-	import { docToPlain, plainToDoc } from '../inbox.js';
+	import RichEditor from '../RichEditor.svelte';
+	import type { NoteDoc } from '../note.js';
 	import type { MilestoneView } from '../milestones.js';
 
 	/** Spec 009 D — create or change a milestone: short name, yes/no criterion, dates, an optional budget. */
@@ -18,7 +19,8 @@
 	// svelte-ignore state_referenced_locally
 	const init = m;
 	let title = $state(init?.title ?? '');
-	let criterion = $state(init?.criterion ? docToPlain(init.criterion) : '');
+	// #23: the criterion is written with the note editor
+	let criterion = $state<NoteDoc | null>(init?.criterion ?? null);
 	// svelte-ignore state_referenced_locally
 	let startDate = $state(init?.startDate ?? today);
 	// svelte-ignore state_referenced_locally
@@ -40,7 +42,7 @@
 			goalId,
 			today,
 			title,
-			criterion: criterion.trim() ? plainToDoc(criterion) : null,
+			criterion,
 			startDate,
 			dueDate: dueDate || null,
 			budgetKind: kind,
@@ -61,10 +63,10 @@
 
 <form class="card" onsubmit={save}>
 	<label>Коротко — для карточки <input bind:value={title} maxlength="40" placeholder="Например, «Разговор 15 мин»" required /></label>
-	<label
-		>Критерий
-		<textarea bind:value={criterion} rows="3" placeholder="Как ты поймёшь, что дошёл? Ответ — да или нет"></textarea>
-	</label>
+	<div class="field">
+		<span class="flabel">Критерий</span>
+		<RichEditor grow label="Критерий" placeholder="Как ты поймёшь, что дошёл? Ответ — да или нет" doc={criterion} onChange={(d) => (criterion = d)} />
+	</div>
 	<div class="two">
 		<label>Начало <input type="date" bind:value={startDate} /></label>
 		<label>Срок <input type="date" bind:value={dueDate} min={startDate} /><small>обычно 1–3 месяца</small></label>
@@ -116,8 +118,7 @@
 		min-width: 0;
 	}
 	input,
-	select,
-	textarea {
+	select {
 		font: inherit;
 		font-size: 17px;
 		min-height: 44px;
@@ -131,6 +132,15 @@
 	}
 	small {
 		font-size: 12px;
+		color: var(--muted);
+	}
+	.field {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.flabel {
+		font-size: 13px;
 		color: var(--muted);
 	}
 	.two {

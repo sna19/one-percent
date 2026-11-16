@@ -3,6 +3,7 @@ import { addDays, weekDays, weekStart, type DateStr } from '../dates.js';
 import type { Db } from './db.js';
 import { categories, entries, goals, milestones, planItems, practices, weekPlans } from './schema.js';
 import { progressUntil } from './milestones.js';
+import { richFirst } from '../note.js';
 
 /** Spec 013 B — the «Цели» gallery: every goal with its picture, «why», milestone, week and what went in. */
 
@@ -80,7 +81,7 @@ export function gallery(db: Db, today: DateStr): Gallery {
 			imageKind: g.imageKind,
 			imageValue: g.imageValue,
 			color: catColor.get(g.categoryId) ?? 'slate',
-			why: g.direction.trim(),
+			why: richFirst(g.direction),
 			milestone: m
 				? {
 						title: m.title,

@@ -122,3 +122,15 @@ describe('firstBlockDoc', () => {
 		expect(firstBlockDoc(null)).toBeNull();
 	});
 });
+
+describe('#23 formatted «Зачем» in a text column', async () => {
+	const { richDoc, richFirst } = await import('./note.js');
+	it('opens old plain text as paragraphs and a stored document as it is', () => {
+		expect(richDoc('')).toBeNull();
+		expect(richDoc('строка 1\nстрока 2')!.content).toHaveLength(2);
+		const doc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Жить', marks: [{ type: 'bold' }] }] }] };
+		expect(richDoc(JSON.stringify(doc))).toEqual(doc);
+		expect(richFirst(JSON.stringify(doc))).toBe('Жить');
+		expect(richFirst('{ не json')).toBe('{ не json');
+	});
+});

@@ -6,6 +6,7 @@
 	import Check from '@lucide/svelte/icons/check';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+	import Maximize2 from '@lucide/svelte/icons/maximize-2';
 	import DayIcon from '../DayIcon.svelte';
 	import { colorOf } from '../palette.js';
 	import { treeOfPractices } from '../tree.js';
@@ -34,6 +35,7 @@
 	// svelte-ignore state_referenced_locally
 	let day = $state<DateStr>(today);
 	let busy = $state(false);
+	let textFull = $state(false);
 	let error = $state<string | null>(null);
 	// svelte-ignore state_referenced_locally
 	let text = $state(docToPlain(item.text));
@@ -144,7 +146,12 @@
 				<p class="muted">Запись ещё не отправлена: разобрать её можно, когда будет связь.</p>
 				<p class="text">{text}</p>
 			{:else}
-				<textarea bind:value={text} rows="3" aria-label="Текст записи"></textarea>
+				<!-- #23: ⤢ opens the text on the whole screen -->
+				<div class="tf" class:full={textFull}>
+					{#if textFull}<div class="full-head"><span>Запись</span><button class="done" onclick={() => (textFull = false)}>Готово</button></div>{/if}
+					<textarea bind:value={text} rows="3" aria-label="Текст записи"></textarea>
+					{#if !textFull}<button class="expand" aria-label="На весь экран" onclick={() => (textFull = true)}><Maximize2 size={16} /></button>{/if}
+				</div>
 			{/if}
 			<ul class="actions">
 				{#if !item.pending}
@@ -261,6 +268,48 @@
 		font: inherit;
 		font-size: 16px;
 		resize: vertical;
+	}
+	.tf {
+		position: relative;
+	}
+	.tf textarea {
+		padding-right: 40px;
+	}
+	.expand {
+		position: absolute;
+		top: 6px;
+		right: 6px;
+		width: 32px;
+		height: 32px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+		border-radius: 8px;
+		background: none;
+		color: var(--muted);
+		cursor: pointer;
+	}
+	.tf.full {
+		position: fixed;
+		inset: 0;
+		z-index: 40;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding: calc(env(safe-area-inset-top) + 6px) 12px calc(env(safe-area-inset-bottom) + 10px);
+		background: var(--surface);
+	}
+	.tf.full textarea {
+		flex: 1;
+		resize: none;
+	}
+	.full-head {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		min-height: 44px;
+		font-weight: 600;
 	}
 	.text {
 		white-space: pre-wrap;

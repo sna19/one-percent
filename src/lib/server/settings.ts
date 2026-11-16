@@ -1,6 +1,7 @@
 import { GOAL_ICON_NAMES } from '../goalIconNames.js';
 import { asc, eq, max } from 'drizzle-orm';
 import { paletteKeys } from '../palette.js';
+import { isEmptyNote, isNoteDoc, NOTE_MAX, sanitizeLinks } from '../note.js';
 import type { Db } from './db.js';
 import { categories, formats, goals, planTemplates, practices } from './schema.js';
 import { getPlanLimit, setPlanLimit } from './plan.js';
@@ -9,10 +10,10 @@ export class InputError extends Error {}
 
 const now = () => new Date().toISOString();
 
-function str(f: FormData, k: string, required = true): string {
+function str(f: FormData, k: string, required = true, max = 200): string {
 	const v = String(f.get(k) ?? '').trim();
 	if (required && !v) throw new InputError('Заполните все поля');
-	if (v.length > 200) throw new InputError('Слишком длинное значение');
+	if (v.length > max) throw new InputError('Слишком длинное значение');
 	return v;
 }
 
@@ -64,13 +65,30 @@ export function saveGoal(db: Db, f: FormData) {
 	const values = {
 		title: str(f, 'title'),
 		categoryId: need(id(f, 'categoryId'), 'категорию'),
-		direction: str(f, 'direction', false),
+		// #23: a formatted «Зачем» is a note document — the note's limit, checked again in richText
+		direction: richText(str(f, 'direction', false, NOTE_MAX)),
 		milestoneText: str(f, 'milestoneText', false),
 		...goalImage(f)
 	};
 	const gid = id(f);
 	if (gid) db.update(goals).set(values).where(eq(goals.id, gid)).run();
 	else db.insert(goals).values({ ...values, sortOrder: nextOrder(db, goals) }).run();
+}
+
+/** #23: «Зачем» may come as a note document (JSON); it is checked like a note and its links made safe. */
+function richText(v: string): string {
+	const t = v.trim();
+	if (!t.startsWith('{')) return v;
+	let d: unknown;
+	try {
+		d = JSON.parse(t);
+	} catch {
+		return v;
+	}
+	if (!isNoteDoc(d)) return v;
+	const json = JSON.stringify(sanitizeLinks(d));
+	if (json.length > NOTE_MAX) throw new InputError('Текст слишком длинный');
+	return isEmptyNote(d) && !json.includes('"taskItem"') ? '' : json;
 }
 
 /**

@@ -168,3 +168,28 @@ export function toggleTask(doc: NoteDoc, index: number): NoteDoc {
 	};
 	return walk(doc) as NoteDoc;
 }
+
+// ── #23: formatted text stored in a plain text column («Зачем») ──────────
+
+/**
+ * A text column that may hold a note document as JSON (#23) or plain text written before: the editor
+ * opens either without loss — plain lines become paragraphs.
+ */
+export function richDoc(s: string | null | undefined): NoteDoc | null {
+	const t = (s ?? '').trim();
+	if (!t) return null;
+	if (t.startsWith('{')) {
+		try {
+			const d = JSON.parse(t);
+			if (isNoteDoc(d)) return d;
+		} catch {
+			/* plain text that starts with a brace */
+		}
+	}
+	return { type: 'doc', content: t.split('\n').map((l) => (l.trim() ? { type: 'paragraph', content: [{ type: 'text', text: l }] } : { type: 'paragraph' })) };
+}
+
+/** The first paragraph as plain text — for cards and lines that show no formatting. */
+export function richFirst(s: string | null | undefined): string {
+	return firstLine(richDoc(s));
+}
