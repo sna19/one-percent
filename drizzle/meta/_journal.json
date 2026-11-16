@@ -64,6 +64,13 @@
       "when": 1794778918070,
       "tag": "0008_milestones",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1794792557272,
+      "tag": "0009_weekly_review",
+      "breakpoints": true
     }
   ]
 }

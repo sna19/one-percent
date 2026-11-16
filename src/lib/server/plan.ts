@@ -51,7 +51,8 @@ export function getPlan(db: Db, start: DateStr): PlanView | null {
 		(items[it.practiceId] ??= []).push(it.date);
 		if (it.note) notes[`${it.practiceId}|${it.date}`] = { note: JSON.parse(it.note), updatedAt: it.noteUpdatedAt };
 	}
-	return { weekStart: plan.weekStart, status: plan.status, source: plan.source, items, notes };
+	const focus = (plan.focusGoalIds ?? '').split(',').filter(Boolean).map(Number);
+	return { weekStart: plan.weekStart, status: plan.status, source: plan.source, items, notes, focus };
 }
 
 /** Day note text as stored for a copy: boxes cleared (Spec 006), null when there is none. */

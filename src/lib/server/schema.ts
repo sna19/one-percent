@@ -92,6 +92,8 @@ export const weekPlans = sqliteTable('week_plans', {
 	/** previous | empty | default | week:<YYYY-MM-DD> | template:<id> */
 	source: text('source').notNull(),
 	confirmedAt: text('confirmed_at'),
+	/** Spec 010: up to three goals the week is planned for, comma-separated ids; only goals in this plan */
+	focusGoalIds: text('focus_goal_ids'),
 	createdAt: createdAt()
 });
 
@@ -188,4 +190,15 @@ export const milestones = sqliteTable('milestones', {
 	/** «Позже» on the due-date card: hidden until this date */
 	snoozedUntil: text('snoozed_until'),
 	createdAt: createdAt()
+});
+
+/** Spec 010 — the weekly review is counted from the data; only the retro answer is stored. */
+export const weekReviews = sqliteTable('week_reviews', {
+	/** Sunday of the reviewed week */
+	weekStart: text('week_start').primaryKey(),
+	/** «Что изменишь на следующей неделе?» */
+	retroText: text('retro_text'),
+	/** answered a week later: did it work? yes | partly | no */
+	retroResult: text('retro_result', { enum: ['yes', 'partly', 'no'] }),
+	viewedAt: text('viewed_at')
 });

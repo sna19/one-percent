@@ -41,6 +41,8 @@ export interface PlanView {
 	items: Record<number, DateStr[]>;
 	/** Spec 006: day notes by `${practiceId}|${date}` */
 	notes: Record<string, { note: import('./note.js').NoteDoc; updatedAt: string | null }>;
+	/** Spec 010: focus of the week, up to three goal ids */
+	focus?: number[];
 }
 
 export interface WeekSummary {
@@ -63,4 +65,6 @@ export interface WeekData {
 	pausedWeeks?: Record<number, DateStr[]>;
 	/** Spec 009: goalId → its open milestone. Missing in data cached before this field. */
 	milestones?: Record<number, import('./milestones.js').MilestoneView>;
+	/** Spec 010: Sunday of last week when its review is ready and not opened yet */
+	reviewPending?: DateStr | null;
 }
