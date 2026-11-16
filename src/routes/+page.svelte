@@ -421,6 +421,64 @@
 		flashTimer = setTimeout(() => (flash = null), 2500);
 	}
 
+	// #24: a practice with a volume (a book)
+	const fmtN = (x: number) => String(Math.round(x * 10) / 10).replace('.', ',');
+	function volPos(p: PracticeView): number {
+		const v = week?.volumes?.[p.id];
+		if (!v) return 0;
+		return v.before + (today >= v.since ? (amountOf(p.id, today) ?? 0) : 0);
+	}
+	let nextFor = $state<number | null>(null);
+	/** #24: «142 / 320 стр · осталось 178» in place of the dose hint, «Пройдено · 320 стр» at the end */
+	function volCaption(p: PracticeView): string {
+		const v = week?.volumes?.[p.id];
+		if (!v) return '';
+		if (v.doneOn) return `Пройдено · ${fmtN(v.total)} ${p.unit}`;
+		const pos = volPos(p);
+		return `${fmtN(pos)} / ${fmtN(v.total)} ${p.unit} · осталось ${fmtN(Math.max(0, v.total - pos))}`;
+	}
+	async function volumeCall(body: Record<string, unknown>) {
+		const r = await fetch('/api/volume', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ today, ...body }) }).catch(() => undefined);
+		const j = await r?.json().catch(() => null);
+		if (!r?.ok) {
+			problem = j?.message ?? 'Нет связи с сервером';
+			return null;
+		}
+		return j;
+	}
+	async function volumeAt(p: PracticeView, f: HTMLFormElement) {
+		const at = Number(String(new FormData(f).get('at') ?? '').replace(',', '.'));
+		if (!Number.isFinite(at)) return;
+		if (await volumeCall({ action: 'at', practiceId: p.id, at })) {
+			await load();
+			await volumeCheck(p);
+		}
+	}
+	async function volumeNext(p: PracticeView, f: HTMLFormElement) {
+		const fd = new FormData(f);
+		const total = Number(String(fd.get('total') ?? '').replace(',', '.'));
+		if (await volumeCall({ action: 'next', practiceId: p.id, total, title: fd.get('title') })) {
+			nextFor = null;
+			await load();
+		}
+	}
+	async function volumeEnd(p: PracticeView) {
+		if (!confirm(`Закончить «${p.title}»? Практика уйдёт в архив, история и пройденное останутся.`)) return;
+		if (await volumeCall({ action: 'end', practiceId: p.id })) await load();
+	}
+	/** finished just now: written to the goal's path once, with a quiet flash */
+	async function volumeCheck(p: PracticeView) {
+		const v = week?.volumes?.[p.id];
+		if (!v || v.doneOn || volPos(p) < v.total) return;
+		const r = await volumeCall({ action: 'finish', practiceId: p.id });
+		if (r?.done) {
+			v.doneOn = today;
+			flash = { text: `${p.unit.startsWith('стр') ? 'Книга прочитана' : 'Пройдено'} · ${fmtN(r.done.total)} ${p.unit} за ${r.done.days} ${r.done.days % 10 === 1 && r.done.days % 100 !== 11 ? 'день' : [2, 3, 4].includes(r.done.days % 10) && ![12, 13, 14].includes(r.done.days % 100) ? 'дня' : 'дней'}`, goalId: p.goalId };
+			clearTimeout(flashTimer);
+			flashTimer = setTimeout(() => (flash = null), 3500);
+		}
+	}
+
 	async function mark(p: PracticeView, date: string, amount: number) {
 		if (!week || date > today) return;
 		const old = amountOf(p.id, date) ?? 0;
@@ -428,10 +486,13 @@
 		const before = m ? m.progressBefore + todayAdds(m, practices, (id) => amountOf(id, today), today) : 0;
 		apply(week, p.id, date, amount);
 		if (date === today) milestoneFlash(p, old, amount, before);
+
 		await cacheWeek($state.snapshot(week));
 		await enqueue({ practiceId: p.id, date, amount });
 		queued = await flush();
 		offline = queued > 0;
+		// #24: after the mark reached the server — the finish is counted there
+		if (date === today && amount > old && !offline) volumeCheck(p);
 		// clearing may move lastDone back — let the server recount
 		if (!offline && amount < p.minDose) load();
 	}
@@ -923,11 +984,11 @@
 			>
 				<span class="ctitle">{p.title}{#if bonus}<span class="tag">бонус</span>{/if}</span>
 			</button>
-			{#if list !== 'tree'}{@render mline(p.goalId, p.goalTitle !== p.title ? p.goalTitle : '')}{/if}
+			{#if week?.volumes?.[p.id]}{@render vline(p)}{:else if list !== 'tree'}{@render mline(p.goalId, p.goalTitle !== p.title ? p.goalTitle : '')}{/if}
 			</div>
 			{#if list === 'other' || list === 'tree'}{@render star(p)}{/if}
 			<span class="dose" class:count={auto}
-				>{auto ? `${st.checked} из ${st.total}` : a && !counts(a, p) ? `${a} из ${p.normDose} ${p.unit}` : a ? `${a} ${p.unit}` : doseHint(p)}</span
+				>{auto ? `${st.checked} из ${st.total}` : a && !counts(a, p) ? `${a} из ${p.normDose} ${p.unit}` : a ? `${a} ${p.unit}` : volCaption(p) || doseHint(p)}</span
 			>
 			{#if first}
 				<!-- task 13: the note's first block, whole and formatted; links work, the rest of a tap opens the card -->
@@ -950,6 +1011,7 @@
 							<button onclick={() => mark(p, viewDay, p.minDose)}>Мин · {p.minDose}</button>
 							<button onclick={() => mark(p, viewDay, p.normDose)}>Норма · {p.normDose}</button>
 						</div>
+						{#if week?.volumes?.[p.id]}{@render volumeRow(p)}{/if}
 						{#if qtyOpen === p.id}
 							<form
 								class="qty"
@@ -1021,6 +1083,13 @@
 	</div>
 {/snippet}
 
+{#snippet vline(p: PracticeView)}
+	<!-- #24: a finite practice — where you are and how much is left; the thin bar under the words is the progress -->
+	{@const v = week!.volumes![p.id]}
+	{@const pos = volPos(p)}
+	<span class="vbar" style="--vp:{Math.min(100, (pos / v.total) * 100)}%" role="img" aria-label="{fmtN(pos)} из {fmtN(v.total)} {p.unit}"></span>
+{/snippet}
+
 {#snippet mline(goalId: number, goalTitle: string)}
 	<!-- Spec 009 B: «goal · flag time left» under the title; a tap opens the goal screen, not the card -->
 	{@const m = week?.milestones?.[goalId]}
@@ -1045,6 +1114,30 @@
 		>
 	{:else if text}
 		<small class="gsmall">{text}</small>
+	{/if}
+{/snippet}
+
+{#snippet volumeRow(p: PracticeView)}
+	{@const v = week!.volumes![p.id]}
+	{#if v.doneOn}
+		<!-- #24: the volume is gone through — the next one, or the practice is over -->
+		{#if nextFor === p.id}
+			<form class="vol-form" onsubmit={(e) => { e.preventDefault(); volumeNext(p, e.currentTarget); }}>
+				<input name="title" placeholder="Название (необязательно)" aria-label="Название" />
+				<input name="total" inputmode="decimal" placeholder="Объём, {p.unit}" aria-label="Объём, {p.unit}" required />
+				<button type="submit">Начать</button>
+			</form>
+		{:else}
+			<div class="dose-row">
+				<button onclick={() => (nextFor = p.id)}>Следующая книга</button>
+				<button onclick={() => volumeEnd(p)}>Закончить практику</button>
+			</div>
+		{/if}
+	{:else}
+		<form class="vol-form" onsubmit={(e) => { e.preventDefault(); volumeAt(p, e.currentTarget); }}>
+			<label>Я на {p.unit}<input name="at" inputmode="decimal" placeholder={fmtN(volPos(p))} aria-label="Текущая позиция, {p.unit}" /></label>
+			<button type="submit" aria-label="Записать позицию">✓</button>
+		</form>
 	{/if}
 {/snippet}
 
@@ -1566,6 +1659,50 @@
 		border-radius: 14px;
 		background: var(--surface);
 		border: 1px solid var(--line);
+	}
+	/* #24: a thin progress bar under the title; the numbers stand in the dose column */
+	.vbar {
+		display: block;
+		width: 100%;
+		max-width: 160px;
+		height: 3px;
+		margin-top: 5px;
+		border-radius: 2px;
+		background: linear-gradient(var(--c), var(--c)) no-repeat left / var(--vp) 100%, color-mix(in oklab, currentColor 18%, transparent);
+	}
+	.vol-form {
+		display: flex;
+		gap: 6px;
+		align-items: center;
+		margin-top: 6px;
+	}
+	.vol-form label {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		flex: 1;
+		font-size: 14px;
+	}
+	.vol-form input {
+		flex: 1;
+		min-width: 0;
+		min-height: 40px;
+		padding: 0 10px;
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		background: var(--surface);
+		color: var(--text);
+		font: inherit;
+	}
+	.vol-form button {
+		min-height: 40px;
+		padding: 0 12px;
+		border: none;
+		border-radius: 10px;
+		background: var(--text);
+		color: var(--bg);
+		font: inherit;
+		cursor: pointer;
 	}
 	.chead-col {
 		display: flex;

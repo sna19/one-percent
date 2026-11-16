@@ -67,6 +67,16 @@ export const practices = sqliteTable('practices', {
 	checklistMarks: integer('checklist_marks', { mode: 'boolean' }).notNull().default(false),
 	/** Task 12: shown first in «Сделать что-то ещё»; does not plan it and does not count for the day. */
 	recommended: integer('recommended', { mode: 'boolean' }).notNull().default(false),
+	/**
+	 * #24 — a finite practice (a book): its whole volume in the practice's unit; null — endless as before.
+	 * Position = volume_start + the amounts marked from volume_since on. «Я на стр. N» moves volume_start so the
+	 * position is N now; the marks themselves never change.
+	 */
+	volumeTotal: real('volume_total'),
+	volumeStart: real('volume_start').notNull().default(0),
+	volumeSince: text('volume_since'),
+	/** the day the volume was gone through; the card then offers «Следующая книга» or «Закончить практику» */
+	volumeDoneOn: text('volume_done_on'),
 	archivedAt: text('archived_at'),
 	createdAt: createdAt()
 });
@@ -204,4 +214,19 @@ export const weekReviews = sqliteTable('week_reviews', {
 	/** answered a week later: did it work? yes | partly | no */
 	retroResult: text('retro_result', { enum: ['yes', 'partly', 'no'] }),
 	viewedAt: text('viewed_at')
+});
+
+/** #24 — a volume gone through (a book read): kept for the goal's «Пройденный путь». */
+export const volumesDone = sqliteTable('volumes_done', {
+	id: integer('id').primaryKey({ autoIncrement: true }),
+	practiceId: integer('practice_id')
+		.notNull()
+		.references(() => practices.id),
+	goalId: integer('goal_id').notNull(),
+	/** what it was — the practice's title at the time */
+	label: text('label').notNull(),
+	total: real('total').notNull(),
+	unit: text('unit').notNull(),
+	startedOn: text('started_on').notNull(),
+	finishedOn: text('finished_on').notNull()
 });

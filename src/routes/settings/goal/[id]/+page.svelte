@@ -282,6 +282,18 @@
 		</div>
 	{/if}
 
+	{#if data.volumesDone.length}
+		<!-- #24: volumes gone through (books read) -->
+		<h2>Пройденный путь</h2>
+		<ul class="list hist">
+			{#each data.volumesDone as v (v.id)}
+				<li>
+					<span>{v.label}<small>{String(v.total).replace('.', ',')} {v.unit} · {fmtDate(v.startedOn)} – {fmtDate(v.finishedOn)}</small></span>
+				</li>
+			{/each}
+		</ul>
+	{/if}
+
 	{#if ms?.history.length}
 		<h2>История майлстонов</h2>
 		<ul class="list hist">

@@ -2,7 +2,8 @@
 	import { page } from '$app/state';
 	import { backFrom } from '#lib/back.js';
 	import { goto } from '$app/navigation';
-	import { onDestroy, untrack } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
+	import { todayStr } from '#lib/dates.js';
 	import TopBar from '#lib/TopBar.svelte';
 	import NoteSheet from '#lib/NoteSheet.svelte';
 	import { autosaver } from '#lib/autosave.svelte.js';
@@ -25,6 +26,30 @@
 	});
 	// the form starts from the loaded values once; later it is the source of truth
 	const p0 = untrack(() => data.practice);
+
+	// #24: the volume
+	const today = todayStr();
+	let volTotal = $state(p0.volumeTotal != null ? String(p0.volumeTotal) : '');
+	let volAt = $state('');
+	let volError = $state<string | null>(null);
+	onMount(async () => {
+		if (p0.volumeTotal == null) return;
+		const r = await fetch(`/api/volume?practiceId=${p0.id}&today=${today}`).catch(() => undefined);
+		if (r?.ok) volAt = String((await r.json()).position);
+	});
+	async function saveVolume() {
+		volError = null;
+		const total = volTotal.trim() ? Number(volTotal.replace(',', '.')) : null;
+		const at = volAt.trim() ? Number(volAt.replace(',', '.')) : undefined;
+		const r = await fetch('/api/volume', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ action: 'set', practiceId: p0.id, today, total, at })
+		}).catch(() => undefined);
+		const j = await r?.json().catch(() => null);
+		if (!r?.ok) volError = j?.message ?? 'Нет связи с сервером';
+		else volAt = j.position != null ? String(j.position) : '';
+	}
 
 	let title = $state(p0.title);
 	let goalId = $state(p0.goalId);
@@ -119,6 +144,17 @@
 		</div>
 	</div>
 
+	<!-- #24: a finite practice (a book): the whole volume and where you are now -->
+	<h2>Объём — если у практики есть конец</h2>
+	<div class="card">
+		<div class="three">
+			<label>Всего, {unit} <input bind:value={volTotal} inputmode="decimal" placeholder="—" onchange={saveVolume} /></label>
+			<label>Сейчас на <input bind:value={volAt} inputmode="decimal" placeholder="0" disabled={!volTotal.trim()} onchange={saveVolume} /></label>
+		</div>
+		<p class="hint">{volTotal.trim() ? 'Позиция растёт сама по отметкам; «Сейчас на» — поправить, где ты на самом деле.' : 'Пусто — практика бесконечная, как обычно.'}</p>
+		{#if volError}<p class="hint" role="alert">{volError}</p>{/if}
+	</div>
+
 	<h2>Обычные дни — для планирования</h2>
 	<div class="card">
 		<div class="weekdays" role="group" aria-label="Обычные дни">
@@ -169,6 +205,11 @@
 	.status {
 		min-height: 18px;
 		margin: -4px 0 6px;
+		font-size: 13px;
+		color: var(--muted);
+	}
+	.hint {
+		margin: 0;
 		font-size: 13px;
 		color: var(--muted);
 	}

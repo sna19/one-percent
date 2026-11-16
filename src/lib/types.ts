@@ -70,4 +70,6 @@ export interface WeekData {
 	milestones?: Record<number, import('./milestones.js').MilestoneView>;
 	/** Spec 010: Sunday of last week when its review is ready and not opened yet */
 	reviewPending?: DateStr | null;
+	/** #24: practiceId → its volume (a book), for practices that have one */
+	volumes?: Record<number, import('./server/volume.js').VolumeView>;
 }

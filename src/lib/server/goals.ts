@@ -1,7 +1,7 @@
 import { and, asc, eq, gte, isNull, lte } from 'drizzle-orm';
 import { addDays, weekDays, weekStart, type DateStr } from '../dates.js';
 import type { Db } from './db.js';
-import { categories, entries, goals, milestones, planItems, practices, weekPlans } from './schema.js';
+import { categories, entries, goals, milestones, planItems, practices, volumesDone, weekPlans } from './schema.js';
 import { progressUntil } from './milestones.js';
 import { richFirst } from '../note.js';
 
@@ -67,6 +67,8 @@ export function gallery(db: Db, today: DateStr): Gallery {
 	const achieved = new Map<number, number>();
 	for (const m of db.select({ g: milestones.goalId }).from(milestones).where(eq(milestones.status, 'achieved')).all())
 		achieved.set(m.g, (achieved.get(m.g) ?? 0) + 1);
+	// #24: a volume gone through (a book read) is an achievement of its goal too
+	for (const v of db.select({ g: volumesDone.goalId }).from(volumesDone).all()) achieved.set(v.g, (achieved.get(v.g) ?? 0) + 1);
 
 	function card(g: (typeof all)[number]): GalleryGoal {
 		const mine = ps.filter((p) => p.goalId === g.id);
