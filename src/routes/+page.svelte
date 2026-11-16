@@ -35,7 +35,7 @@
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Star from '@lucide/svelte/icons/star';
 	import Flag from '@lucide/svelte/icons/flag';
-	import { remaining } from '#lib/milestones.js';
+	import { amountLabel, budgetLabel, remaining, todayAdds } from '#lib/milestones.js';
 	import FilePen from '@lucide/svelte/icons/file-pen';
 	import NoteHead from '#lib/NoteHead.svelte';
 	import Tree from '#lib/Tree.svelte';
@@ -383,9 +383,36 @@
 		if (p && amount >= p.minDose && date <= today && (!p.lastDone || date > p.lastDone)) p.lastDone = date;
 	}
 
+	// Spec 009 C: a short flash after a mark — what it added to the goal's milestone; a tap opens the goal
+	let flash = $state<{ text: string; goalId: number } | null>(null);
+	let flashTimer: ReturnType<typeof setTimeout> | undefined;
+	function milestoneFlash(p: PracticeView, old: number, amount: number, before: number) {
+		const m = week?.milestones?.[p.goalId];
+		if (!m || !counts(amount, p) || amount <= old) return;
+		const after = m.progressBefore + todayAdds(m, practices, (id) => amountOf(id, today), today);
+		let text: string;
+		if (m.budgetKind !== 'none' && m.budgetTarget) {
+			if (before < m.budgetTarget && after >= m.budgetTarget) text = 'Бюджет майлстона набран — проверишь себя?';
+			else {
+				const plus = m.budgetKind === 'amount' && p.unit === m.budgetUnit ? `+${amountLabel(amount - old, p.unit)} ` : after > before ? '+1 занятие ' : '';
+				text = `${plus}→ ${m.title} · ${budgetLabel(m, after)}`;
+			}
+		} else {
+			const rem = remaining(m.dueDate, today);
+			text = `→ ${m.title}${rem ? ` · ${rem}` : ''}`;
+		}
+		flash = { text, goalId: p.goalId };
+		clearTimeout(flashTimer);
+		flashTimer = setTimeout(() => (flash = null), 2500);
+	}
+
 	async function mark(p: PracticeView, date: string, amount: number) {
 		if (!week || date > today) return;
+		const old = amountOf(p.id, date) ?? 0;
+		const m = week.milestones?.[p.goalId];
+		const before = m ? m.progressBefore + todayAdds(m, practices, (id) => amountOf(id, today), today) : 0;
 		apply(week, p.id, date, amount);
+		if (date === today) milestoneFlash(p, old, amount, before);
 		await cacheWeek($state.snapshot(week));
 		await enqueue({ practiceId: p.id, date, amount });
 		queued = await flush();
@@ -655,6 +682,9 @@
 </main>
 <TabBar {tab} inboxCount={inbox.count} onselect={(t) => setTab(t)} />
 <QuickCapture bind:this={capture} />
+{#if flash}
+	<div class="flash-wrap" aria-live="polite"><a class="flash" href="/settings/goal/{flash.goalId}?from={tab}">{flash.text}</a></div>
+{/if}
 
 {#snippet dayNav()}
 	<div class="weeknav">
@@ -1363,6 +1393,31 @@
 		align-items: center;
 		gap: 2px;
 		flex-wrap: wrap;
+	}
+	/* Spec 009 C: does not block — the next mark is still a tap away */
+	.flash {
+		position: fixed;
+		left: 50%;
+		bottom: calc(env(safe-area-inset-bottom) + 72px);
+		transform: translateX(-50%);
+		z-index: 9;
+		max-width: calc(100% - 32px);
+		box-sizing: border-box;
+		padding: 9px 16px;
+		border-radius: 14px;
+		background: var(--text);
+		color: var(--bg);
+		font-size: 14px;
+		text-decoration: none;
+		text-align: center;
+		box-shadow: 0 6px 20px rgb(0 0 0 / 0.2);
+		animation: flash-in 0.18s ease-out;
+	}
+	@keyframes flash-in {
+		from {
+			opacity: 0;
+			transform: translate(-50%, 8px);
+		}
 	}
 	.chead-col {
 		display: flex;
