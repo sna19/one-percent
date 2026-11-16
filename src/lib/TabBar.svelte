@@ -5,7 +5,8 @@
 	import InboxIcon from '@lucide/svelte/icons/inbox';
 
 	/** Spec 007 A — main sections at the bottom, under the thumb; respects the iPhone home indicator. */
-	export type Tab = 'inbox' | 'today' | 'week' | 'all';
+	import { onMount } from 'svelte';
+	import type { Tab } from './nav.svelte.js';
 	interface Props {
 		tab: Tab;
 		onselect: (t: Tab) => void;
@@ -13,6 +14,16 @@
 		inboxCount?: number;
 	}
 	let { tab, onselect, inboxCount = 0 }: Props = $props();
+
+	// #21: hidden only while the keyboard is up (a sheet with a field), as in iOS
+	let keyboard = $state(false);
+	onMount(() => {
+		const v = window.visualViewport;
+		if (!v) return;
+		const fit = () => (keyboard = window.innerHeight - v.height > 150);
+		v.addEventListener('resize', fit);
+		return () => v.removeEventListener('resize', fit);
+	});
 
 	const tabs = [
 		{ id: 'inbox', label: 'Входящие', icon: InboxIcon },
@@ -22,7 +33,7 @@
 	] as const;
 </script>
 
-<nav class="tabbar" aria-label="Разделы">
+<nav class="tabbar" class:keyboard aria-label="Разделы">
 	{#each tabs as t (t.id)}
 		<button class:on={tab === t.id} aria-current={tab === t.id ? 'page' : undefined} onclick={() => onselect(t.id)}>
 			<span class="ic">
@@ -48,6 +59,9 @@
 		-webkit-backdrop-filter: blur(14px);
 		backdrop-filter: blur(14px);
 		border-top: 1px solid var(--line);
+	}
+	.tabbar.keyboard {
+		display: none;
 	}
 	.ic {
 		position: relative;

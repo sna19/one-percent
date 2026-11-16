@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { addDays, todayStr, weekDays, weekStart } from '#lib/dates.js';
 	import { colorOf } from '#lib/palette.js';
 	import { counts, daysWithout, depth, priority } from '#lib/rules.js';
@@ -19,7 +19,8 @@
 	import { flip } from 'svelte/animate';
 	import NoteSheet from '#lib/NoteSheet.svelte';
 	import TopBar from '#lib/TopBar.svelte';
-	import TabBar from '#lib/TabBar.svelte';
+	import { page } from '$app/state';
+	import { keyOf, nav, tabOf } from '#lib/nav.svelte.js';
 	import QuickCapture from '#lib/inbox/QuickCapture.svelte';
 	import InboxScreen from '#lib/inbox/InboxScreen.svelte';
 	import { inbox } from '#lib/inbox/state.svelte.js';
@@ -94,21 +95,22 @@
 	 * Spec 004: three tabs. «Сегодня» always opens first (not remembered, so a morning starts on the
 	 * working screen); «Неделя» is the plan view of Spec 003; «Всё» holds the goal / format lens.
 	 */
-	type Tab = 'inbox' | 'today' | 'week' | 'all';
 	type View = 'plan' | Lens;
-	let tab = $state<Tab>('today');
+	// #21: the tab comes from the address (the tab bar lives in the layout and keeps each tab's stack)
+	const tab = $derived(tabOf(page.url, 'today'));
 	let capture: QuickCapture;
 	let allLens = $state<Lens>(read('all-lens', 'goal'));
 	const lens = $derived<View>(tab === 'week' ? 'plan' : allLens);
 	let open = $state<string[]>(read('open-groups', []));
-	function setTab(t: Tab) {
-		tab = t;
-		// the Today tab always comes back to today
-		if (t === 'today') {
-			viewDay = today;
-			if (start !== weekStart(today)) toToday();
-		}
-	}
+	// a second tap on the active tab: back to its start — today, this week
+	let seenRootTap = nav.rootTap;
+	$effect(() => {
+		if (nav.rootTap === seenRootTap) return;
+		seenRootTap = nav.rootTap;
+		expanded = null;
+		if (tab === 'today') viewDay = today;
+		if (start !== weekStart(today)) toToday();
+	});
 	function setLens(l: Lens) {
 		allLens = l;
 		write('all-lens', l);
@@ -500,11 +502,19 @@
 		offline = queued > 0;
 	}
 
+	// #18, #21: coming back from a nested screen restores the day, the open card, the week and the scroll
+	const h = nav.home;
+	if (h.at && h.viewDay && new Date(h.at).toDateString() === new Date().toDateString()) {
+		viewDay = h.viewDay;
+		expanded = h.expanded ?? null;
+		if (h.start) start = h.start;
+	}
+	onDestroy(() => {
+		nav.home = { viewDay, expanded, start, at: Date.now() };
+	});
+
 	onMount(() => {
-		const q = new URLSearchParams(location.search).get('tab');
-		if (q === 'week' || q === 'all' || q === 'inbox') tab = q;
-		load();
-		inbox.init(today);
+		load().then(() => nav.restore(keyOf(page.url)));
 		const refresh = () => {
 			const t = todayStr();
 			if (t !== today) {
@@ -686,7 +696,6 @@
 		{/if}
 	{/if}
 </main>
-<TabBar {tab} inboxCount={inbox.count} onselect={(t) => setTab(t)} />
 <QuickCapture bind:this={capture} />
 {#if flash}
 	<div class="flash-wrap" aria-live="polite"><a class="flash" href="/settings/goal/{flash.goalId}?from={tab}">{flash.text}</a></div>
@@ -838,7 +847,12 @@
 			style={cellStyle(p.color)}
 			role="group"
 			aria-label={p.title}
-			onclick={() => toggleCard(p.id)}
+			onclick={(e) => {
+				// a link (goal line, flag) and the opened part handle their own taps; links must reach the
+				// router, so they are not stopped — a stopped click becomes a full page load (#21)
+				if ((e.target as Element).closest('a, .cexpand')) return;
+				toggleCard(p.id);
+			}}
 		>
 			{#if !auto}
 				<button
@@ -881,7 +895,7 @@
 				</div>
 			{/if}
 			{#if isOpen}
-				<div class="cnote cexpand" role="presentation" onclick={(e) => e.stopPropagation()}>
+				<div class="cnote cexpand">
 					{#if p.note}
 						<NoteHead kind="practice" />
 						<NoteView doc={p.note} onToggle={(i) => saveNote(p, toggleTask(p.note!, i))} onOpen={() => toggleCard(p.id)} />
@@ -954,7 +968,7 @@
 {#snippet mline(goalId: number, goalTitle: string)}
 	<!-- Spec 009 B: «goal · flag time left» under the title; a tap opens the goal screen, not the card -->
 	{@const m = week?.milestones?.[goalId]}
-	<a class="mline" href="/settings/goal/{goalId}?from={tab}" onclick={(e) => e.stopPropagation()}
+	<a class="mline" href="/settings/goal/{goalId}?from={tab}"
 		>{#if goalTitle}<span class="mgoal">{goalTitle}</span>{/if}{#if m}{#if goalTitle}<span class="sep">·</span>{/if}<Flag size={11} /><span
 				>{remaining(m.dueDate, today) || 'без срока'}</span
 			>{:else}{#if goalTitle}<span class="sep">·</span>{/if}<span class="none">нет майлстона</span>{/if}</a

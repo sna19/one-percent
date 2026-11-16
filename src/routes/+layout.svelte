@@ -1,11 +1,61 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import TabBar from '#lib/TabBar.svelte';
+	import { inbox } from '#lib/inbox/state.svelte.js';
+	import { keyOf, nav, ROOT, tabOf, type Tab } from '#lib/nav.svelte.js';
+	import { todayStr } from '#lib/dates.js';
 	import type { LayoutProps } from './$types';
 	let { children }: LayoutProps = $props();
+
+	/**
+	 * #21 — the tab bar on every screen. Each tab keeps its stack: switching tabs opens where that tab was,
+	 * at the same scroll; a second tap on the active tab goes to its root. Switching replaces the history
+	 * entry, so a tab switch is not a step «back».
+	 */
+	onMount(() => {
+		nav.tab = tabOf(page.url, 'today');
+		inbox.init(todayStr());
+	});
+	beforeNavigate(({ from }) => {
+		if (from?.url) nav.scroll.set(keyOf(from.url), window.scrollY);
+	});
+	afterNavigate(({ to, type }) => {
+		if (!to?.url) return;
+		nav.tab = tabOf(to.url, nav.tab);
+		nav.last[nav.tab] = keyOf(to.url);
+		if (type === 'goto' || type === 'link') nav.restore(keyOf(to.url));
+	});
+
+	function select(t: Tab) {
+		if (t === nav.tab) {
+			// back to the root of this tab, at its start: today, this week, the top
+			nav.last[t] = ROOT[t];
+			nav.home = {};
+			nav.scroll.delete(ROOT[t]);
+			nav.rootTap++;
+			if (keyOf(page.url) !== ROOT[t]) goto(ROOT[t], { replace: true });
+			else window.scrollTo({ top: 0, behavior: 'smooth' });
+			return;
+		}
+		const target = nav.last[t] ?? ROOT[t];
+		goto(target, { replace: true, reset: false }).then(() => {
+			if (!nav.scroll.has(target)) window.scrollTo(0, 0);
+		});
+	}
+	const root = $derived(page.url.pathname === '/');
 </script>
 
 {@render children()}
+{#if !root}<div class="tab-spacer" aria-hidden="true"></div>{/if}
+<TabBar tab={nav.tab} inboxCount={inbox.count} onselect={select} />
 
 <style>
+	/* nested screens end above the tab bar; the root screen has its own padding */
+	.tab-spacer {
+		height: calc(env(safe-area-inset-bottom) + 64px);
+	}
 	:global(:root) {
 		--bg: #f6f5f2;
 		--surface: #ffffff;
