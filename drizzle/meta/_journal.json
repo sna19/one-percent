@@ -57,6 +57,13 @@
       "when": 1794764057947,
       "tag": "0007_inbox",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1794778918070,
+      "tag": "0008_milestones",
+      "breakpoints": true
     }
   ]
 }

@@ -161,3 +161,31 @@ export const inboxItems = sqliteTable('inbox_items', {
 	/** where it was sorted to, for «История»: «Заметка «Всегда»: Итальянский», «Новая цель: …» */
 	target: text('target')
 });
+
+/**
+ * Spec 009 — a milestone: a checkable point of a goal with a date. A goal has at most one open milestone;
+ * closed ones are its history. Progress and pace are counted from entries, never stored.
+ */
+export const milestones = sqliteTable('milestones', {
+	id: integer('id').primaryKey({ autoIncrement: true }),
+	goalId: integer('goal_id')
+		.notNull()
+		.references(() => goals.id),
+	/** short name for the card line and the flash, up to ~30 characters */
+	title: text('title').notNull(),
+	/** how to show it is reached — yes or no; note document (Tiptap JSON) or null */
+	criterion: text('criterion'),
+	/** YYYY-MM-DD; null — no date yet (migrated from the old text field) */
+	dueDate: text('due_date'),
+	startDate: text('start_date').notNull(),
+	/** none | sessions (days with any practice of the goal ≥ min) | amount (sum of amounts in budget_unit) */
+	budgetKind: text('budget_kind', { enum: ['none', 'sessions', 'amount'] }).notNull().default('none'),
+	budgetUnit: text('budget_unit'),
+	budgetTarget: real('budget_target'),
+	status: text('status', { enum: ['open', 'achieved', 'missed', 'dropped'] }).notNull().default('open'),
+	closedAt: text('closed_at'),
+	reviewNote: text('review_note'),
+	/** «Позже» on the due-date card: hidden until this date */
+	snoozedUntil: text('snoozed_until'),
+	createdAt: createdAt()
+});
