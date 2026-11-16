@@ -51,3 +51,24 @@ describe('treeOfPractices (#12)', () => {
 		expect(treeOfPractices([])).toEqual([]);
 	});
 });
+
+describe('#25 filterTree', async () => {
+	const { filterTree } = await import('./tree.js');
+	const t = [
+		{ id: 1, name: 'Развитие', color: 'blue', goals: [
+			{ id: 10, title: 'Итальянский', categoryId: 1, practices: [{ id: 100, title: 'Аудиокнига', star: false }, { id: 101, title: 'Разговор', star: true }] },
+			{ id: 11, title: 'Чтение', categoryId: 1, practices: [{ id: 110, title: 'Книга на ночь', star: false }] }
+		] },
+		{ id: 2, name: 'Здоровье', color: 'green', goals: [{ id: 20, title: 'Спорт', categoryId: 2, practices: [{ id: 200, title: 'Бег', star: true }] }] }
+	];
+	it('search by practice, goal or category name; ё = е; nothing else changes without a filter', () => {
+		expect(filterTree(t, {})).toBe(t);
+		expect(filterTree(t, { query: 'книг' }).flatMap((c) => c.goals.flatMap((g) => g.practices.map((p) => p.id)))).toEqual([100, 110]);
+		expect(filterTree(t, { query: 'итальян' })[0].goals[0].practices).toHaveLength(2);
+		expect(filterTree(t, { query: 'здоровье' }).map((c) => c.id)).toEqual([2]);
+	});
+	it('chips keep matching practices; goal picking keeps empty goals', () => {
+		expect(filterTree(t, { keep: [(p) => p.star] }).flatMap((c) => c.goals.map((g) => g.id))).toEqual([10, 20]);
+		expect(filterTree(t, { query: 'спорт', goalsOnly: true }).flatMap((c) => c.goals.map((g) => g.id))).toEqual([20]);
+	});
+});

@@ -146,3 +146,68 @@ export function dropTarget(
 	if (last.kind === 'parent') return { parentId: last.parentId, index: 0 };
 	return { parentId: last.parentId, index: countBefore(last.parentId) };
 }
+
+// ── #25: the practice navigator — search and filter chips ──────────────────
+
+export interface TreeFilter<P> {
+	/** words of a name; a category or goal that matches keeps all of its practices */
+	query?: string;
+	/** a practice must pass every predicate given (chips «В плане недели», «★», «В фокусе») */
+	keep?: ((p: P, g: TreeGoal<P>) => boolean)[];
+	/** goal-level picking: goals stay even with no practice left */
+	goalsOnly?: boolean;
+}
+
+const norm = (s: string) => s.toLocaleLowerCase('ru').replace(/ё/g, 'е').trim();
+
+/** The tree with only what matches; empty goals and categories drop out (unless picking goals). */
+export function filterTree<P extends { title: string }>(tree: TreeCategory<P>[], f: TreeFilter<P>): TreeCategory<P>[] {
+	const q = norm(f.query ?? '');
+	const keep = f.keep ?? [];
+	if (!q && !keep.length) return tree;
+	const hit = (s: string) => !q || norm(s).includes(q);
+	return tree
+		.map((c) => {
+			const catHit = q && hit(c.name);
+			const goals = c.goals
+				.map((g) => {
+					const goalHit = catHit || (q && hit(g.title));
+					const practices = g.practices.filter((p) => (goalHit || hit(p.title)) && keep.every((k) => k(p, g)));
+					return { ...g, practices, hit: goalHit };
+				})
+				.filter((g) => g.practices.length || (f.goalsOnly && (g.hit || !q) && !keep.length))
+				.map(({ hit: _, ...g }) => g);
+			return { ...c, goals };
+		})
+		.filter((c) => c.goals.length);
+}
+
+/** #25: the «Архив» chip — what is archived (a practice, or everything under an archived goal or category). */
+export function buildArchivedTree(
+	categories: (Row & { name: string; color: string })[],
+	goals: (Row & { title: string; categoryId: number })[],
+	practices: (Row & TreePractice)[]
+): TreeCategory[] {
+	const cat = new Map(categories.map((c) => [c.id, c]));
+	const goal = new Map(goals.map((g) => [g.id, g]));
+	const gone = (p: Row & TreePractice) => {
+		const g = goal.get(p.goalId);
+		return !!(p.archivedAt || g?.archivedAt || (g && cat.get(g.categoryId)?.archivedAt));
+	};
+	return categories
+		.map((c) => ({
+			id: c.id,
+			name: c.name,
+			color: c.color,
+			goals: goals
+				.filter((g) => g.categoryId === c.id)
+				.map((g) => ({
+					id: g.id,
+					title: g.title,
+					categoryId: g.categoryId,
+					practices: practices.filter((p) => p.goalId === g.id && gone(p)).map(({ archivedAt: _, ...p }) => p as TreePractice)
+				}))
+				.filter((g) => g.practices.length)
+		}))
+		.filter((c) => c.goals.length);
+}

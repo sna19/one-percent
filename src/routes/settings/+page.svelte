@@ -3,10 +3,10 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import TopBar from '#lib/TopBar.svelte';
-	import Tree from '#lib/Tree.svelte';
+	import PracticeTree from '#lib/PracticeTree.svelte';
 	import { backFrom } from '#lib/back.js';
 	import { colorOf } from '#lib/palette.js';
-	import { buildTree, goalOrder, moveGoal, movePractice, practiceOrder, type TreeCategory } from '#lib/tree.js';
+	import { buildArchivedTree, buildTree, goalOrder, moveGoal, movePractice, practiceOrder, type TreeCategory } from '#lib/tree.js';
 	import Plus from '@lucide/svelte/icons/plus';
 	import GripVertical from '@lucide/svelte/icons/grip-vertical';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
@@ -169,13 +169,16 @@
 
 	{#if error}<p class="error" role="alert">{error}</p>{/if}
 
-	<Tree
+	<!-- #25: the practice navigator — the same tree everywhere, with search and filters -->
+	<PracticeTree
 		bind:this={treeComp}
 		bind:root={treeEl}
 		{tree}
 		storageKey="settings-tree-collapsed"
 		boxed
 		{dragging}
+		chips={[{ key: 'star', label: '★ Рекомендовать', keep: (p) => !!(p as { recommended?: boolean }).recommended }]}
+		archived={buildArchivedTree(data.categories, data.goals, data.practices)}
 		goalHref={(g) => `/settings/goal/${g.id}`}
 	>
 		{#snippet goalLead(g)}
@@ -198,7 +201,7 @@
 		{#snippet afterGoals(c)}
 			<button class="add" onclick={() => newGoal(c.id)}><Plus size={16} /> Цель</button>
 		{/snippet}
-	</Tree>
+	</PracticeTree>
 
 	<h2 class="refs-title">Справочники</h2>
 	<ul class="refs">

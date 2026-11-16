@@ -26,6 +26,11 @@
 		afterPractices?: Snippet<[TreeGoal<P>, TreeCategory<P>]>;
 		/** last row under a category's goals, e.g. «+ Цель» */
 		afterGoals?: Snippet<[TreeCategory<P>]>;
+		/** #25: a search or a filter is on — every branch shown open, what is folded is kept for later */
+		forceOpen?: boolean;
+		/** #25: picking a goal — no practice rows, a tap on a goal picks it */
+		goalsOnly?: boolean;
+		onGoal?: (g: TreeGoal<P>) => void;
 		/** the row being dragged, for its lifted look */
 		dragging?: { kind: 'practice' | 'goal'; id: number } | null;
 		root?: HTMLElement;
@@ -41,6 +46,9 @@
 		afterPractices,
 		afterGoals,
 		dragging = null,
+		forceOpen = false,
+		goalsOnly = false,
+		onGoal,
 		root = $bindable()
 	}: Props = $props();
 
@@ -85,7 +93,7 @@
 
 <div class="tree" class:boxed bind:this={root} class:sorting={!!dragging}>
 	{#each tree as c (c.id)}
-		{@const catOpen = !cats.includes(c.id)}
+		{@const catOpen = forceOpen || !cats.includes(c.id)}
 		<section>
 			<h2 data-row="category" data-cat={c.id}>
 				<button class="cat-toggle" aria-expanded={catOpen} aria-label="{c.name}: {catOpen ? 'свернуть' : 'развернуть'}" onclick={() => toggleCat(c.id)}>
@@ -97,19 +105,23 @@
 			{#if catOpen}
 				<ul class="goals">
 					{#each c.goals as g (g.id)}
-						{@const open = !goals.includes(g.id)}
+						{@const open = !goalsOnly && (forceOpen || !goals.includes(g.id))}
 						<li class="goal" class:dragging={dragging?.kind === 'goal' && dragging.id === g.id}>
 							<div class="goal-row" data-row="goal" data-id={g.id} data-goal={g.id} data-cat={c.id}>
-								<button class="chev" class:open aria-label="{g.title}: {open ? 'свернуть' : 'развернуть'}" aria-expanded={open} onclick={() => toggleGoal(g.id)}
-									><ChevronRight size={18} /></button
-								>
+								{#if !goalsOnly}
+									<button class="chev" class:open aria-label="{g.title}: {open ? 'свернуть' : 'развернуть'}" aria-expanded={open} onclick={() => toggleGoal(g.id)}
+										><ChevronRight size={18} /></button
+									>
+								{/if}
 								{@render goalLead?.(g, c)}
-								{#if goalHref}
+								{#if onGoal}
+									<button class="goal-title pick" onclick={() => onGoal(g)}>{g.title}</button>
+								{:else if goalHref}
 									<a class="goal-title" href={goalHref(g)}>{g.title}</a>
 								{:else}
 									<button class="goal-title" aria-hidden="true" tabindex="-1" onclick={() => toggleGoal(g.id)}>{g.title}</button>
 								{/if}
-								<span class="count">{g.practices.length}</span>
+								{#if !goalsOnly}<span class="count">{g.practices.length}</span>{/if}
 								{@render goalExtra?.(g, c)}
 							</div>
 							{#if open}
