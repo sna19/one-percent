@@ -910,6 +910,13 @@
 							>
 						{/if}
 						{@render star(p)}
+						<a
+							class="flag-btn"
+							class:dim={!week?.milestones?.[p.goalId]}
+							href="/settings/goal/{p.goalId}?from={tab}"
+							aria-label="Цель «{p.goalTitle}»: майлстон и прогресс"
+							title="Майлстон"><Flag size={22} /></a
+						>
 						{#if !auto && !isFutureDay}
 							<button
 								class="qty-btn"
@@ -1577,7 +1584,8 @@
 		gap: 4px;
 		margin: 0 -6px -4px;
 	}
-	.actions button {
+	.actions button,
+	.actions .flag-btn {
 		width: 44px;
 		height: 44px;
 		display: inline-flex;
@@ -1591,6 +1599,7 @@
 		font: inherit;
 		cursor: pointer;
 	}
+	.actions .flag-btn.dim,
 	.actions button.dim {
 		opacity: 0.4;
 	}
