@@ -36,5 +36,6 @@ export const ICON_NAMES = [
 	'inbox',
 	'flag',
 	'when',
-	'sliders'
+	'sliders',
+	'badge-check'
 ] as const;

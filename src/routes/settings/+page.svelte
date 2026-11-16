@@ -1,4 +1,5 @@
 <script lang="ts">
+	import GoalImage from '#lib/GoalImage.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import TopBar from '#lib/TopBar.svelte';
@@ -177,6 +178,10 @@
 		{dragging}
 		goalHref={(g) => `/settings/goal/${g.id}`}
 	>
+		{#snippet goalLead(g)}
+			{@const full = data.goals.find((x) => x.id === g.id)}
+			<GoalImage kind={full?.imageKind ?? 'text'} value={full?.imageValue ?? ''} color={tree.find((c) => c.id === g.categoryId)?.color ?? 'slate'} title={g.title} size={20} />
+		{/snippet}
 		{#snippet goalExtra(g)}
 			<button class="handle" aria-label="{g.title}: перетащить" title="Перетащить" onpointerdown={(e) => down(e, 'goal', g.id)}><GripVertical size={20} /></button>
 		{/snippet}

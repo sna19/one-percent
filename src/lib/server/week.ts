@@ -19,6 +19,8 @@ export function loadWeek(db: Db, start: DateStr, today: DateStr): WeekData {
 			goalId: goals.id,
 			goalTitle: goals.title,
 			goalOrder: goals.sortOrder,
+			goalImageKind: goals.imageKind,
+			goalImageValue: goals.imageValue,
 			categoryId: categories.id,
 			categoryName: categories.name,
 			categoryOrder: categories.sortOrder,

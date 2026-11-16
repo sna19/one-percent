@@ -19,6 +19,8 @@
 		goalHref?: (g: TreeGoal<P>) => string;
 		/** after the goal's title, e.g. a drag handle */
 		goalExtra?: Snippet<[TreeGoal<P>, TreeCategory<P>]>;
+		/** before the goal's title, e.g. its picture (Spec 013) */
+		goalLead?: Snippet<[TreeGoal<P>, TreeCategory<P>]>;
 		practice: Snippet<[P, TreeGoal<P>, TreeCategory<P>]>;
 		/** last row under a goal's practices, e.g. «+ Практика» */
 		afterPractices?: Snippet<[TreeGoal<P>, TreeCategory<P>]>;
@@ -34,6 +36,7 @@
 		boxed = false,
 		goalHref,
 		goalExtra,
+		goalLead,
 		practice,
 		afterPractices,
 		afterGoals,
@@ -100,6 +103,7 @@
 								<button class="chev" class:open aria-label="{g.title}: {open ? 'свернуть' : 'развернуть'}" aria-expanded={open} onclick={() => toggleGoal(g.id)}
 									><ChevronRight size={18} /></button
 								>
+								{@render goalLead?.(g, c)}
 								{#if goalHref}
 									<a class="goal-title" href={goalHref(g)}>{g.title}</a>
 								{:else}

@@ -3,6 +3,7 @@
 	import CalendarDays from '@lucide/svelte/icons/calendar-days';
 	import LayoutGrid from '@lucide/svelte/icons/layout-grid';
 	import InboxIcon from '@lucide/svelte/icons/inbox';
+	import Target from '@lucide/svelte/icons/target';
 
 	/** Spec 007 A — main sections at the bottom, under the thumb; respects the iPhone home indicator. */
 	import { onMount } from 'svelte';
@@ -29,6 +30,7 @@
 		{ id: 'inbox', label: 'Входящие', icon: InboxIcon },
 		{ id: 'today', label: 'Сегодня', icon: Sun },
 		{ id: 'week', label: 'Неделя', icon: CalendarDays },
+		{ id: 'goals', label: 'Цели', icon: Target },
 		{ id: 'all', label: 'Всё', icon: LayoutGrid }
 	] as const;
 </script>
@@ -53,7 +55,7 @@
 		bottom: 0;
 		z-index: 5;
 		display: grid;
-		grid-template-columns: repeat(4, 1fr);
+		grid-template-columns: repeat(5, 1fr);
 		padding: 4px 8px env(safe-area-inset-bottom);
 		background: color-mix(in oklab, var(--surface) 88%, transparent);
 		-webkit-backdrop-filter: blur(14px);

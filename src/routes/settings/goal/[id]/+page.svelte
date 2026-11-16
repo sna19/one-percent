@@ -7,6 +7,8 @@
 	import { autosaver } from '#lib/autosave.svelte.js';
 	import Archive from '@lucide/svelte/icons/archive';
 	import Flag from '@lucide/svelte/icons/flag';
+	import GoalImage from '#lib/GoalImage.svelte';
+	import GoalImagePicker from '#lib/GoalImagePicker.svelte';
 	import { onMount } from 'svelte';
 	import NoteView from '#lib/NoteView.svelte';
 	import MilestoneForm from '#lib/milestone/MilestoneForm.svelte';
@@ -27,7 +29,12 @@
 	const milestoneText = g0.milestoneText;
 
 	const saver = autosaver('goal');
-	const changed = () => saver.save({ id: g0.id, title, categoryId, direction, milestoneText });
+	// Spec 013 A: the goal's picture
+	let imageKind = $state(g0.imageKind);
+	let imageValue = $state(g0.imageValue);
+	let picking = $state(false);
+	const changed = () => saver.save({ id: g0.id, title, categoryId, direction, milestoneText, imageKind, imageValue });
+	const catColor = $derived(data.categories.find((c) => c.id === categoryId)?.color ?? 'slate');
 
 	// Spec 009 D — the milestone blocks, loaded with the device's today
 	type GoalMs = {
@@ -84,6 +91,26 @@
 	<p class="status" aria-live="polite">
 		{saver.state.status === 'saving' ? 'Сохраняю…' : saver.state.status === 'saved' ? 'Сохранено' : saver.state.status === 'error' ? saver.state.message : ''}
 	</p>
+
+	<button class="image" onclick={() => (picking = true)} aria-label="Образ цели: изменить">
+		<GoalImage kind={imageKind} value={imageValue} color={catColor} {title} size={52} />
+		<span>Образ — изменить</span>
+	</button>
+	{#if picking}
+		<GoalImagePicker
+			kind={imageKind}
+			value={imageValue}
+			color={catColor}
+			{title}
+			onPick={(k, v) => {
+				imageKind = k;
+				imageValue = v;
+				picking = false;
+				changed();
+			}}
+			onClose={() => (picking = false)}
+		/>
+	{/if}
 
 	<div class="card">
 		<label>Название <input bind:value={title} oninput={changed} /></label>
@@ -255,6 +282,19 @@
 	}
 	.empty {
 		color: var(--muted);
+	}
+	.image {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		margin: 0 0 12px;
+		padding: 0;
+		border: none;
+		background: none;
+		color: var(--muted);
+		font: inherit;
+		font-size: 14px;
+		cursor: pointer;
 	}
 	.with-icon {
 		display: flex;

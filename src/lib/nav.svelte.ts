@@ -6,15 +6,16 @@ import type { DateStr } from './dates.js';
  * a second tap on the active tab goes to its root. The memory lives in this module: it survives moving
  * between screens, not a reload — a cold start opens on «Сегодня» as before (Spec 004).
  */
-export type Tab = 'inbox' | 'today' | 'week' | 'all';
+export type Tab = 'inbox' | 'today' | 'week' | 'goals' | 'all';
 
-export const ROOT: Record<Tab, string> = { inbox: '/?tab=inbox', today: '/', week: '/?tab=week', all: '/?tab=all' };
+export const ROOT: Record<Tab, string> = { inbox: '/?tab=inbox', today: '/', week: '/?tab=week', goals: '/goals', all: '/?tab=all' };
 const isTab = (t: string | null): t is Tab => !!t && t in ROOT;
 
 /** The tab a screen belongs to: a root by its ?tab, a nested screen by ?from, otherwise the stack it was opened in. */
 type Loc = { pathname: string; search: string; searchParams: { get(name: string): string | null } };
 
 export function tabOf(url: Loc, current: Tab): Tab {
+	if (url.pathname === '/goals') return 'goals';
 	if (url.pathname === '/') {
 		const t = url.searchParams.get('tab');
 		return isTab(t) ? t : 'today';
@@ -33,6 +34,8 @@ class Nav {
 	scroll = new Map<string, number>();
 	/** «Сегодня» and «Неделя» state that a screen of the same route would lose: the day, the open card, the week */
 	home: { viewDay?: DateStr; expanded?: number | null; start?: DateStr; at?: number } = {};
+	/** Spec 013: horizontal scroll of each «Цели» ribbon, by category */
+	ribbons = new Map<number, number>();
 	/** bumped on a second tap of the active root tab: the screen goes back to its start (today, top) */
 	rootTap = $state(0);
 

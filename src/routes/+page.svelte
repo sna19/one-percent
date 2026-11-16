@@ -39,6 +39,7 @@
 	import CalendarArrowRight from '@lucide/svelte/icons/calendar-arrow-right';
 	import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
 	import WhenSheet from '#lib/WhenSheet.svelte';
+	import GoalImage from '#lib/GoalImage.svelte';
 	import ChartNoAxesColumn from '@lucide/svelte/icons/chart-no-axes-column';
 	import MilestoneCheck from '#lib/milestone/MilestoneCheck.svelte';
 	import { amountLabel, budgetLabel, remaining, todayAdds } from '#lib/milestones.js';
@@ -677,6 +678,7 @@
 					<div class="name gwrap">
 						<button class="name group" onclick={() => toggle(g.key)} aria-expanded={isOpen}>
 							<svg class="chev" class:open={isOpen} viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 1.5 7 5 3.5 8.5" /></svg>
+							{#if lens !== 'format'}{@render gimg(g.practices[0])}{/if}
 							<span class="gtext"><span>{g.title} <span class="count">{g.practices.length}</span></span></span>
 						</button>
 						<!-- Spec 012 A: the name folds (its role); the line under it is the goal's link -->
@@ -1029,6 +1031,11 @@
 	>
 {/snippet}
 
+{#snippet gimg(p: PracticeView)}
+	<!-- Spec 013 A: the goal's picture as a small label in goal rows -->
+	<span class="gimg"><GoalImage kind={p.goalImageKind ?? 'text'} value={p.goalImageValue ?? ''} color={p.color} title={p.goalTitle} size={18} /></span>
+{/snippet}
+
 {#snippet goalSmall(goalId: number | null, text: string)}
 	<!-- Spec 009 B: the same milestone line in goal headings of «Неделя» and «Всё» -->
 	{@const m = goalId === null ? undefined : week?.milestones?.[goalId]}
@@ -1074,7 +1081,7 @@
 	{@const n = nOf(p)}
 	<!-- Spec 012 A: a practice's name opens its screen; dose and note — a long press on a cell -->
 	<div class="name prow" class:indent>
-		<a class="obj pname" href="/settings/practice/{p.id}?from={tab}">{title}</a>
+		<a class="obj pname" href="/settings/practice/{p.id}?from={tab}">{#if lens !== 'format' && !indent}{@render gimg(p)}{/if}{title}</a>
 		{@render goalSmall(lens !== 'format' && !indent ? p.goalId : null, [sub, n >= 2 ? without(n) : ''].filter(Boolean).join(' · '))}
 	</div>
 	{#each days as d (d)}
@@ -1241,6 +1248,11 @@
 		display: flex;
 		flex-direction: column;
 		min-width: 0;
+	}
+	.gimg {
+		display: inline-flex;
+		margin-right: 5px;
+		vertical-align: -4px;
 	}
 	.gwrap {
 		min-width: 0;

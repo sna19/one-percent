@@ -24,6 +24,9 @@ export const goals = sqliteTable('goals', {
 		.references(() => categories.id),
 	direction: text('direction').notNull().default(''),
 	milestoneText: text('milestone_text').notNull().default(''),
+	/** Spec 013: the goal's picture — icon (a name from the app's set) | emoji | text (1–3 characters) */
+	imageKind: text('image_kind', { enum: ['icon', 'emoji', 'text'] }).notNull().default('text'),
+	imageValue: text('image_value').notNull().default(''),
 	/** v0.1 uses only 'active'; other statuses come with later specs. */
 	status: text('status').notNull().default('active'),
 	sortOrder: integer('sort_order').notNull().default(0),

@@ -1,3 +1,4 @@
+import { GOAL_ICON_NAMES } from '../goalIconNames.js';
 import { asc, eq, max } from 'drizzle-orm';
 import { paletteKeys } from '../palette.js';
 import type { Db } from './db.js';
@@ -64,11 +65,30 @@ export function saveGoal(db: Db, f: FormData) {
 		title: str(f, 'title'),
 		categoryId: need(id(f, 'categoryId'), 'категорию'),
 		direction: str(f, 'direction', false),
-		milestoneText: str(f, 'milestoneText', false)
+		milestoneText: str(f, 'milestoneText', false),
+		...goalImage(f)
 	};
 	const gid = id(f);
 	if (gid) db.update(goals).set(values).where(eq(goals.id, gid)).run();
 	else db.insert(goals).values({ ...values, sortOrder: nextOrder(db, goals) }).run();
+}
+
+/**
+ * Spec 013 A: the goal's picture. Left out of the form (the legacy screen) — unchanged. An icon must be one of
+ * the app's set, an emoji at most a few characters, text 1–3 characters.
+ */
+function goalImage(f: FormData): { imageKind?: 'icon' | 'emoji' | 'text'; imageValue?: string } {
+	const kind = f.get('imageKind');
+	if (kind === null) return {};
+	const value = String(f.get('imageValue') ?? '').trim();
+	if (kind === 'icon') {
+		if (!GOAL_ICON_NAMES.has(value)) throw new InputError('Такой иконки нет в наборе');
+	} else if (kind === 'emoji') {
+		if (!value || [...value].length > 8) throw new InputError('Одно эмодзи');
+	} else if (kind === 'text') {
+		if ([...value].length > 3) throw new InputError('Текст образа — до трёх символов');
+	} else throw new InputError('Неверный образ');
+	return { imageKind: kind, imageValue: value };
 }
 
 export function savePractice(db: Db, f: FormData) {

@@ -11,6 +11,9 @@ export interface PracticeView {
 	goalTitle: string;
 	/** for the tree in «Сделать что-то ещё» (#12): the goal's and category's place in the settings order */
 	goalOrder: number;
+	/** Spec 013: the goal's picture, for its small label in rows */
+	goalImageKind?: 'icon' | 'emoji' | 'text';
+	goalImageValue?: string;
 	categoryId: number;
 	categoryName: string;
 	categoryOrder: number;
