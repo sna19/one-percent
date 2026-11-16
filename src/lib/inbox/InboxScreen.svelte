@@ -13,8 +13,10 @@
 		practices: PracticeView[];
 		today: DateStr;
 		onChanged: () => void;
+		/** Spec 010: the Sunday flow inbox → review → plan; shown while last week's review waits */
+		reviewNext?: boolean;
 	}
-	let { practices, today, onChanged }: Props = $props();
+	let { practices, today, onChanged, reviewNext = false }: Props = $props();
 
 	let draft = $state('');
 	let openItem = $state<InboxItemView | null>(null);
@@ -144,6 +146,10 @@
 			{/each}
 		</ul>
 	{/if}
+{/if}
+
+{#if reviewNext}
+	<a class="next" href="/review?from=week">Дальше — итоги недели →</a>
 {/if}
 
 {#if openItem}
@@ -291,6 +297,16 @@
 		font: inherit;
 		font-size: 13px;
 		cursor: pointer;
+	}
+	.next {
+		display: block;
+		margin: 16px 0 0;
+		padding: 12px 14px;
+		border-radius: 12px;
+		background: var(--surface);
+		color: var(--text);
+		text-decoration: none;
+		text-align: center;
 	}
 	.error {
 		background: var(--surface);

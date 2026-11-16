@@ -210,16 +210,14 @@ export function computeReview(db: Db, start: DateStr, today: DateStr): WeeklyRev
 			.map((r) => r.s),
 		previous: prev?.retroText ? { start: prev.weekStart, retroText: prev.retroText, retroResult: prev.retroResult } : null,
 		focus,
-		fading: fadingAll.slice(0, REVIEW.MAX_ROWS),
-		fadingMore: Math.max(0, fadingAll.length - REVIEW.MAX_ROWS),
+		fading: fadingAll,
 		plan: {
 			planned: sum(rows.map((r) => r.planned)),
 			done: sum(rows.map((r) => r.plannedDone)),
 			bonus: sum(rows.map((r) => r.bonus)),
 			categories: catRows
 		},
-		milestones: msRows.slice(0, REVIEW.MAX_ROWS),
-		milestonesMore: Math.max(0, msRows.length - REVIEW.MAX_ROWS),
+		milestones: msRows,
 		days,
 		weakDays,
 		weakPractices,

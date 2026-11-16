@@ -92,6 +92,24 @@
 	const sessionCount = $derived(planned.size);
 	const tooMany = $derived(data?.limit != null && practiceCount > data.limit);
 
+	// Spec 010: focus of the week — up to three goals, only goals with practices in this plan
+	const planGoals = $derived(groups.filter((g) => g.practices.some((p) => (data?.plan?.items[p.id] ?? []).length)));
+	const focus = $derived(data?.plan?.focus ?? []);
+	async function toggleFocus(goalId: number) {
+		const next = focus.includes(goalId) ? focus.filter((g) => g !== goalId) : [...focus, goalId];
+		if (next.length > 3 || !data?.plan) return;
+		data.plan.focus = next;
+		const r = await fetch('/api/review', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ action: 'focus', start, goalIds: next })
+		}).catch(() => undefined);
+		if (!r?.ok) {
+			error = r ? ((await r.json().catch(() => null))?.message ?? 'Фокус не сохранился') : 'Нет связи с сервером';
+			await call(null);
+		}
+	}
+
 	async function call(body: Record<string, unknown> | null) {
 		busy = true;
 		error = undefined;
@@ -342,6 +360,20 @@
 			</div>
 		</section>
 
+		{#if planGoals.length}
+			<section>
+				<h2>Фокус недели</h2>
+				<p class="muted small">До трёх целей, ради которых планируется неделя. В итогах они идут первыми.</p>
+				<div class="focus" role="group" aria-label="Фокус недели">
+					{#each planGoals as g (g.key)}
+						{@const id = g.practices[0].goalId}
+						{@const on = focus.includes(id)}
+						<button class:on aria-pressed={on} disabled={!on && focus.length >= 3} onclick={() => toggleFocus(id)}>{g.title}</button>
+					{/each}
+				</div>
+			</section>
+		{/if}
+
 		<section>
 			<h2>3. Утвердить</h2>
 			<label class="check"><input type="checkbox" bind:checked={saveTemplate} /> Сохранить как шаблон недели</label>
@@ -432,6 +464,30 @@
 {/if}
 
 <style>
+	.focus {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+	.focus button {
+		min-height: 36px;
+		padding: 0 12px;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		font-size: 14px;
+		cursor: pointer;
+	}
+	.focus button.on {
+		background: var(--text);
+		color: var(--bg);
+		border-color: var(--text);
+	}
+	.focus button:disabled {
+		opacity: 0.4;
+	}
 	/* Spec 008: planning starts with the inbox */
 	.inbox-banner {
 		display: block;

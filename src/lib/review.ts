@@ -59,8 +59,8 @@ export interface WeeklyReview {
 	weeks: DateStr[];
 	previous: { start: DateStr; retroText: string; retroResult: 'yes' | 'partly' | 'no' | null } | null;
 	focus: (GoalWeek & { milestone: string | null })[];
+	/** all of them; the screen shows MAX_ROWS and «ещё N» */
 	fading: FadingRow[];
-	fadingMore: number;
 	plan: {
 		planned: number;
 		done: number;
@@ -68,7 +68,6 @@ export interface WeeklyReview {
 		categories: { id: number; name: string; color: string; planned: number; done: number; goals: GoalWeek[] }[];
 	};
 	milestones: MilestoneRow[];
-	milestonesMore: number;
 	days: { date: DateStr; planned: number; done: number }[];
 	weakDays: DateStr[];
 	weakPractices: string[];

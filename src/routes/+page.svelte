@@ -36,6 +36,7 @@
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Star from '@lucide/svelte/icons/star';
 	import Flag from '@lucide/svelte/icons/flag';
+	import ChartNoAxesColumn from '@lucide/svelte/icons/chart-no-axes-column';
 	import MilestoneCheck from '#lib/milestone/MilestoneCheck.svelte';
 	import { amountLabel, budgetLabel, remaining, todayAdds } from '#lib/milestones.js';
 	import FilePen from '@lucide/svelte/icons/file-pen';
@@ -564,6 +565,7 @@
 			title="Неделя"
 			subtitle="{label(days[0])} – {label(days[6])}"
 			menu={[
+				{ label: 'Итоги недели', icon: ChartNoAxesColumn, href: `/review?from=week` },
 				{ label: 'Шаблоны недели', icon: Layers, href: `/plan?start=${start}&from=week&templates=1` },
 				{ label: 'Новая неделя с нуля', icon: CalendarPlus, href: `/plan?start=${start}&from=week&fresh=1` }
 			]}
@@ -574,6 +576,10 @@
 				<a class="icon" href="/settings?from=week" aria-label="Настройки" title="Настройки"><SettingsIcon size={22} /></a>
 			{/snippet}
 		</TopBar>
+		{#if week?.reviewPending && isCurrentWeek}
+			<!-- Spec 010: until last week's review is opened -->
+			<a class="review-banner" href="/review?from=week">Итоги прошлой недели готовы</a>
+		{/if}
 	{:else if tab === 'all'}
 		<TopBar help="all" onAdd={() => capture.show()} title="Всё" subtitle="{label(days[0])} – {label(days[6])}" below={weekNav}>
 			{#snippet actions()}
@@ -593,7 +599,7 @@
 	{/if}
 
 	{#if tab === 'inbox'}
-		<InboxScreen {practices} {today} onChanged={() => load()} />
+		<InboxScreen {practices} {today} onChanged={() => load()} reviewNext={!!week?.reviewPending} />
 	{:else if offline && week}
 		<p class="status">{problem ?? 'Нет связи'}{queued ? ` · не отправлено: ${queued}` : ''}</p>
 	{/if}
@@ -1455,6 +1461,15 @@
 			opacity: 0;
 			transform: translate(-50%, 8px);
 		}
+	}
+	.review-banner {
+		display: block;
+		margin: 0 0 10px;
+		padding: 12px 14px;
+		border-radius: 12px;
+		background: var(--surface);
+		color: var(--text);
+		text-decoration: none;
 	}
 	.due-card {
 		margin: 4px 0 12px;
