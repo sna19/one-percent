@@ -74,4 +74,6 @@ export interface WeekData {
 	reviewPending?: DateStr | null;
 	/** #24: practiceId → its volume (a book), for practices that have one */
 	volumes?: Record<number, import('./server/volume.js').VolumeView>;
+	/** #28: open steps of active goals */
+	steps?: import('./steps.js').StepView[];
 }

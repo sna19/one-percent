@@ -1,0 +1,337 @@
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import GripVertical from '@lucide/svelte/icons/grip-vertical';
+	import { sortable } from './sortable.js';
+	import RichEditor from './RichEditor.svelte';
+	import { STEP_STALE_DAYS, type StepView } from './steps.js';
+	import { dayTitle } from './today.js';
+
+	/**
+	 * #28 — a goal's steps on its screen: open ones (box, ≡ to reorder, a tap edits), «+ Шаг» one line at a
+	 * time, and the done ones in the goal's «Пройденный путь» with «Вернуть». A step is one box: no dose.
+	 */
+	interface Props {
+		goalId: number;
+		practices: { id: number; title: string }[];
+	}
+	let { goalId, practices }: Props = $props();
+
+	let open = $state<StepView[]>([]);
+	let done = $state<StepView[]>([]);
+	let preview = $state<number[] | null>(null);
+	let draft = $state('');
+	let editing = $state<StepView | null>(null);
+	let error = $state<string | null>(null);
+
+	async function load() {
+		const r = await fetch(`/api/steps?goalId=${goalId}`).catch(() => undefined);
+		if (!r?.ok) return;
+		const j = await r.json();
+		open = j.open;
+		done = j.done;
+	}
+	onMount(load);
+	export const reload = load;
+
+	async function post(body: Record<string, unknown>) {
+		error = null;
+		const r = await fetch('/api/steps', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => undefined);
+		if (!r?.ok) {
+			error = (await r?.json().catch(() => null))?.message ?? 'Нет связи с сервером';
+			return null;
+		}
+		return r.json();
+	}
+
+	async function add(e: SubmitEvent) {
+		e.preventDefault();
+		const t = draft.trim();
+		if (!t) return;
+		draft = '';
+		if (await post({ action: 'create', goalId, title: t })) await load();
+	}
+	async function check(s: StepView) {
+		open = open.filter((x) => x.id !== s.id);
+		if (await post({ action: 'done', id: s.id })) await load();
+	}
+	async function back(s: StepView) {
+		if (await post({ action: 'undone', id: s.id })) await load();
+	}
+	async function saveEdit(fields: Record<string, unknown>) {
+		if (!editing) return;
+		await post({ action: 'update', id: editing.id, fields });
+	}
+	async function remove() {
+		if (!editing || !confirm(`Убрать шаг «${editing.title}»?`)) return;
+		const id = editing.id;
+		editing = null;
+		if (await post({ action: 'delete', id })) await load();
+	}
+	async function closeEdit() {
+		editing = null;
+		await load();
+	}
+
+	const now = Date.now();
+	const age = (s: StepView) => Math.floor((now - Date.parse(s.createdAt)) / 86_400_000);
+	const pName = (id: number | null) => practices.find((p) => p.id === id)?.title;
+	const list = $derived(preview ? preview.map((id) => open.find((s) => s.id === id)!).filter(Boolean) : open);
+	const doneOn = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) : '');
+</script>
+
+<div class="steps">
+	{#if list.length}
+		<ul
+			class="list"
+			use:sortable={{
+				preview: (ids) => (preview = ids),
+				drop: async (ids) => {
+					preview = ids;
+					if (await post({ action: 'order', ids })) await load();
+					preview = null;
+				}
+			}}
+		>
+			{#each list as s (s.id)}
+				<li data-id={s.id}>
+					<input type="checkbox" aria-label="Сделано: {s.title}" onchange={() => check(s)} />
+					<button class="title" onclick={() => (editing = { ...s })}>
+						<span>{s.title}</span>
+						{#if s.practiceId || s.plannedDate || age(s) >= STEP_STALE_DAYS}
+							<small
+								>{[pName(s.practiceId) ? `сначала · ${pName(s.practiceId)}` : '', s.plannedDate ? dayTitle(s.plannedDate) : '']
+									.filter(Boolean)
+									.join(' · ')}{#if age(s) >= STEP_STALE_DAYS}<span class="stale">{Math.floor(age(s) / 7)} нед</span>{/if}</small
+							>
+						{/if}
+					</button>
+					<button class="handle" data-handle aria-label="{s.title}: перетащить"><GripVertical size={18} /></button>
+				</li>
+			{/each}
+		</ul>
+	{/if}
+	<form class="add" onsubmit={add}>
+		<input bind:value={draft} placeholder="+ Шаг" aria-label="Новый шаг" enterkeyhint="next" />
+	</form>
+	{#if error}<p class="err" role="alert">{error}</p>{/if}
+
+	{#if done.length}
+		<details class="path">
+			<summary>Пройденный путь · шаги {done.length}</summary>
+			<ul class="list">
+				{#each done as s (s.id)}
+					<li class="done">
+						<span class="title"><span>{s.title}</span><small>{doneOn(s.doneAt)}</small></span>
+						<button class="back" onclick={() => back(s)}>Вернуть</button>
+					</li>
+				{/each}
+			</ul>
+		</details>
+	{/if}
+</div>
+
+{#if editing}
+	{@const e = editing}
+	<div class="backdrop" role="presentation" onclick={closeEdit}></div>
+	<div class="sheet" role="dialog" aria-label="Шаг">
+		<header><span class="st">Шаг</span><button class="donebtn" onclick={closeEdit}>Готово</button></header>
+		<div class="body">
+			<label>Что сделать <input value={e.title} onchange={(ev) => saveEdit({ title: ev.currentTarget.value })} /></label>
+			<label
+				>Часть практики — «сначала»
+				<select value={e.practiceId ?? ''} onchange={(ev) => saveEdit({ practiceId: ev.currentTarget.value ? Number(ev.currentTarget.value) : null })}>
+					<option value="">— шаг цели —</option>
+					{#each practices as p (p.id)}<option value={p.id}>{p.title}</option>{/each}
+				</select>
+			</label>
+			<label>День (необязательно) <input type="date" value={e.plannedDate ?? ''} onchange={(ev) => saveEdit({ plannedDate: ev.currentTarget.value || null })} /></label>
+			<div class="field">
+				<span>Заметка</span>
+				<RichEditor grow label="Заметка шага" doc={e.note} onChange={(d) => saveEdit({ note: d })} />
+			</div>
+			<button class="remove" onclick={remove}>Убрать шаг</button>
+		</div>
+	</div>
+{/if}
+
+<style>
+	.list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		background: var(--surface);
+		border-radius: 12px;
+		overflow: hidden;
+	}
+	.list li {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-height: 46px;
+		padding: 0 4px 0 12px;
+	}
+	.list li + li {
+		border-top: 1px solid var(--line);
+	}
+	.list input[type='checkbox'] {
+		flex: none;
+		width: 20px;
+		height: 20px;
+		margin: 0;
+	}
+	.title {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		padding: 6px 0;
+		border: none;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		font-size: 16px;
+		text-align: left;
+		cursor: pointer;
+	}
+	.title small {
+		color: var(--muted);
+		font-size: 12px;
+	}
+	.stale {
+		margin-left: 6px;
+		padding: 0 6px;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+	}
+	.handle {
+		flex: none;
+		width: 40px;
+		height: 44px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+		background: none;
+		color: var(--muted);
+		touch-action: none;
+		cursor: grab;
+	}
+	.add {
+		margin-top: 6px;
+	}
+	.add input {
+		width: 100%;
+		box-sizing: border-box;
+		min-height: 44px;
+		padding: 0 12px;
+		border: 1px dashed var(--line);
+		border-radius: 12px;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		font-size: 16px;
+	}
+	.err {
+		font-size: 14px;
+		color: var(--muted);
+	}
+	.path {
+		margin-top: 10px;
+	}
+	.path summary {
+		min-height: 36px;
+		display: flex;
+		align-items: center;
+		color: var(--muted);
+		font-size: 14px;
+		cursor: pointer;
+	}
+	.done .title {
+		color: var(--muted);
+		cursor: default;
+	}
+	.back {
+		flex: none;
+		min-height: 34px;
+		padding: 0 10px;
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		font-size: 13px;
+		cursor: pointer;
+	}
+	.backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 20;
+		background: rgb(0 0 0 / 0.35);
+	}
+	.sheet {
+		position: fixed;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 21;
+		max-width: 560px;
+		max-height: 85vh;
+		margin: 0 auto;
+		display: flex;
+		flex-direction: column;
+		padding: 8px 16px calc(env(safe-area-inset-bottom) + 12px);
+		background: var(--surface);
+		border-radius: 16px 16px 0 0;
+	}
+	.sheet header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		min-height: 44px;
+	}
+	.st {
+		font-weight: 700;
+	}
+	.donebtn {
+		border: none;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.body {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		overflow-y: auto;
+	}
+	.body label,
+	.field {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		font-size: 13px;
+		color: var(--muted);
+	}
+	.body input,
+	.body select {
+		min-height: 44px;
+		padding: 0 10px;
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		background: var(--bg);
+		color: var(--text);
+		font: inherit;
+		font-size: 16px;
+	}
+	.remove {
+		align-self: flex-start;
+		min-height: 40px;
+		border: none;
+		background: none;
+		color: var(--muted);
+		font: inherit;
+		cursor: pointer;
+	}
+</style>

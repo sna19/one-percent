@@ -6,6 +6,7 @@ import { ensureCurrentPlan, parseDays } from './plan.js';
 import { openMilestones } from './milestones.js';
 import { reviewPending } from './review.js';
 import { volumes } from './volume.js';
+import { openSteps } from './steps.js';
 import { categories, entries, formats, goals, planItems, practices, weekPlans } from './schema.js';
 
 export function loadWeek(db: Db, start: DateStr, today: DateStr): WeekData {
@@ -86,7 +87,8 @@ export function loadWeek(db: Db, start: DateStr, today: DateStr): WeekData {
 		pausedWeeks: pausedWeeks(db, [...new Set(rows.map((r) => r.goalId))], today),
 		milestones: openMilestones(db, today),
 		reviewPending: reviewPending(db, today),
-		volumes: volumes(db, today)
+		volumes: volumes(db, today),
+		steps: openSteps(db)
 	};
 }
 

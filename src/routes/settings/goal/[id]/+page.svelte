@@ -10,6 +10,7 @@
 	import Archive from '@lucide/svelte/icons/archive';
 	import Flag from '@lucide/svelte/icons/flag';
 	import GoalImage from '#lib/GoalImage.svelte';
+	import StepList from '#lib/StepList.svelte';
 	import PracticeTree from '#lib/PracticeTree.svelte';
 	import { buildTree } from '#lib/tree.js';
 	import RichEditor from '#lib/RichEditor.svelte';
@@ -280,6 +281,10 @@
 			<button class="primary" onclick={() => (editing = 'new')}>Новый майлстон</button>
 		</div>
 	{/if}
+
+	<!-- #28: the goal's steps stand above its practices -->
+	<h2>Шаги</h2>
+	<StepList goalId={g0.id} practices={practices.map((p) => ({ id: p.id, title: p.title }))} />
 
 	<h2>Практики цели</h2>
 	<ul class="list">

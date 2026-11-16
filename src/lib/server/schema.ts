@@ -233,3 +233,23 @@ export const volumesDone = sqliteTable('volumes_done', {
 	startedOn: text('started_on').notNull(),
 	finishedOn: text('finished_on').notNull()
 });
+
+/**
+ * #28 — a step: a one-off task of a goal (optionally a part of one of its practices — a precondition,
+ * «сначала …»). No dose, no repeat: one box. Done steps go to the goal's «Пройденный путь».
+ */
+export const steps = sqliteTable('steps', {
+	id: integer('id').primaryKey({ autoIncrement: true }),
+	goalId: integer('goal_id')
+		.notNull()
+		.references(() => goals.id),
+	practiceId: integer('practice_id').references(() => practices.id),
+	title: text('title').notNull(),
+	/** a day for it, optional; it shows on «Сегодня» from that day */
+	plannedDate: text('planned_date'),
+	/** note document (Tiptap JSON), optional */
+	note: text('note'),
+	sortOrder: integer('sort_order').notNull().default(0),
+	createdAt: createdAt(),
+	doneAt: text('done_at')
+});
