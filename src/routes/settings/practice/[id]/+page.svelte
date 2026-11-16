@@ -30,6 +30,13 @@
 	// the form starts from the loaded values once; later it is the source of truth
 	const p0 = untrack(() => data.practice);
 
+	// #27: on the «Ссылки» tab
+	let inLinks = $state(!!p0.inLinks);
+	async function saveInLinks() {
+		const r = await fetch('/api/links', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'set', practiceId: p0.id, on: inLinks }) }).catch(() => undefined);
+		if (!r?.ok) inLinks = !inLinks;
+	}
+
 	// #24: the volume
 	const today = todayStr();
 	let volTotal = $state(p0.volumeTotal != null ? String(p0.volumeTotal) : '');
@@ -188,6 +195,8 @@
 	<h2>«Сделать что-то ещё»</h2>
 	<div class="card">
 		<label class="toggle"><input type="checkbox" bind:checked={recommended} onchange={changed} /> Рекомендовать — показывать первой, даже когда не в плане</label>
+		<!-- #27 -->
+		<label class="toggle"><input type="checkbox" bind:checked={inLinks} onchange={saveInLinks} /> В «Ссылках» — ссылки из заметки «Всегда» на отдельной вкладке</label>
 	</div>
 
 	<h2>План дня</h2>

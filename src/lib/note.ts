@@ -193,3 +193,32 @@ export function richDoc(s: string | null | undefined): NoteDoc | null {
 export function richFirst(s: string | null | undefined): string {
 	return firstLine(richDoc(s));
 }
+
+// ── #27: the links of a note, for the «Ссылки» tab ──────────────────────────
+
+/**
+ * The links of a note in reading order: text marked with one address is one link (bold or highlight in the
+ * middle does not split it). Only safe addresses; the text is the link's name.
+ */
+export function noteLinks(doc: NoteDoc | null | undefined): { text: string; href: string }[] {
+	const out: { text: string; href: string }[] = [];
+	const walk = (nodes: NoteNode[] | undefined) => {
+		let last: { text: string; href: string } | null = null;
+		for (const n of nodes ?? []) {
+			if (n.type === 'text') {
+				const raw = n.marks?.find((m) => m.type === 'link')?.attrs?.href;
+				const href = raw ? safeHref(raw) : null;
+				if (href && last && last.href === href) last.text += n.text ?? '';
+				else if (href) {
+					last = { text: n.text ?? '', href };
+					out.push(last);
+				} else last = null;
+			} else {
+				last = null;
+				walk(n.content);
+			}
+		}
+	};
+	walk(doc?.content);
+	return out.map((l) => ({ ...l, text: l.text.trim() || l.href }));
+}

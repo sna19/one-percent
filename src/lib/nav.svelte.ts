@@ -6,9 +6,9 @@ import type { DateStr } from './dates.js';
  * a second tap on the active tab goes to its root. The memory lives in this module: it survives moving
  * between screens, not a reload — a cold start opens on «Сегодня» as before (Spec 004).
  */
-export type Tab = 'inbox' | 'today' | 'week' | 'goals' | 'all';
+export type Tab = 'inbox' | 'today' | 'week' | 'goals' | 'links';
 
-export const ROOT: Record<Tab, string> = { inbox: '/?tab=inbox', today: '/', week: '/?tab=week', goals: '/goals', all: '/?tab=all' };
+export const ROOT: Record<Tab, string> = { inbox: '/?tab=inbox', today: '/', week: '/?tab=week', goals: '/goals', links: '/links' };
 const isTab = (t: string | null): t is Tab => !!t && t in ROOT;
 
 /** The tab a screen belongs to: a root by its ?tab, a nested screen by ?from, otherwise the stack it was opened in. */
@@ -16,8 +16,14 @@ type Loc = { pathname: string; search: string; searchParams: { get(name: string)
 
 export function tabOf(url: Loc, current: Tab): Tab {
 	if (url.pathname === '/goals') return 'goals';
+	if (url.pathname === '/links') return 'links';
 	if (url.pathname === '/') {
 		const t = url.searchParams.get('tab');
+		// #27: «Все практики» left the tab bar — it belongs to the tab it was opened from
+		if (t === 'all') {
+			const f = url.searchParams.get('from');
+			return isTab(f) ? f : current;
+		}
 		return isTab(t) ? t : 'today';
 	}
 	const f = url.searchParams.get('from');
@@ -56,3 +62,9 @@ class Nav {
 }
 
 export const nav = new Nav();
+
+/** The screen of the root page: a tab of it, or «Все практики» (#27: no longer a tab). */
+export function screenOf(url: Loc): 'inbox' | 'today' | 'week' | 'all' {
+	const t = url.searchParams.get('tab');
+	return t === 'inbox' || t === 'week' || t === 'all' ? t : 'today';
+}

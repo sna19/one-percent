@@ -134,3 +134,22 @@ describe('#23 formatted «Зачем» in a text column', async () => {
 		expect(richFirst('{ не json')).toBe('{ не json');
 	});
 });
+
+describe('#27 noteLinks', async () => {
+	const { noteLinks } = await import('./note.js');
+	it('links in order; one address split by marks stays one link; unsafe ones are dropped', () => {
+		const L = (href: string) => [{ type: 'link', attrs: { href } }];
+		const doc = {
+			type: 'doc',
+			content: [
+				{ type: 'paragraph', content: [{ type: 'text', text: 'Учебник ', marks: L('https://a.com/x') }, { type: 'text', text: 'итальянского', marks: [...L('https://a.com/x'), { type: 'bold' }] }, { type: 'text', text: ' и ' }, { type: 'text', text: 'словарь', marks: L('b.org') }] },
+				{ type: 'taskList', content: [{ type: 'taskItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'плохая', marks: L('javascript:alert(1)') }] }] }] }
+			]
+		};
+		expect(noteLinks(doc as never)).toEqual([
+			{ text: 'Учебник итальянского', href: 'https://a.com/x' },
+			{ text: 'словарь', href: 'https://b.org' }
+		]);
+		expect(noteLinks(null)).toEqual([]);
+	});
+});

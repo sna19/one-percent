@@ -29,6 +29,8 @@ export interface PracticeView {
 	checklistMarks: boolean;
 	/** task 12: first in «Сделать что-то ещё» */
 	recommended: boolean;
+	/** #27: its note links are on the «Ссылки» tab */
+	inLinks?: boolean;
 	/** Usual weekdays for planning, 0 (Sun) … 6 (Sat). */
 	defaultDays: number[];
 	createdOn: DateStr;

@@ -8,6 +8,7 @@
 	import Star from '@lucide/svelte/icons/star';
 	import CirclePlus from '@lucide/svelte/icons/circle-plus';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import LayoutGrid from '@lucide/svelte/icons/layout-grid';
 	import TopBar from '#lib/TopBar.svelte';
 	import GoalImage from '#lib/GoalImage.svelte';
 	import QuickCapture from '#lib/inbox/QuickCapture.svelte';
@@ -153,7 +154,7 @@
 {/snippet}
 
 <main>
-	<TopBar help="goals" title="Цели" onAdd={() => capture.show()}>
+	<TopBar help="goals" title="Цели" onAdd={() => capture.show()} menu={[{ label: 'Все практики', icon: LayoutGrid, href: '/?tab=all&from=goals' }]}>
 		{#snippet actions()}
 			<button class="icon" aria-label="Новая цель" title="Новая цель" onclick={newGoal}><CirclePlus size={22} /></button>
 		{/snippet}
@@ -255,6 +256,8 @@
 					</ul>
 				</section>
 			{/if}
+			<!-- #27: «Все практики» left the tab bar; it is also here, at the end -->
+			<a class="obj allrow" href="/?tab=all&from=goals"><LayoutGrid size={18} />Все практики<ChevronRight size={18} /></a>
 		{/if}
 	{:else if !error}
 		<p class="note">Загрузка…</p>
@@ -493,6 +496,20 @@
 	.n {
 		margin-left: auto;
 		font-size: 13px;
+		color: var(--muted);
+	}
+	.allrow {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		min-height: 46px;
+		padding: 0 12px;
+		border-radius: 12px;
+		background: var(--surface);
+		color: var(--text);
+	}
+	.allrow :global(svg:last-child) {
+		margin-left: auto;
 		color: var(--muted);
 	}
 	.hint,

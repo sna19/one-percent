@@ -20,7 +20,7 @@
 	import NoteSheet from '#lib/NoteSheet.svelte';
 	import TopBar from '#lib/TopBar.svelte';
 	import { page } from '$app/state';
-	import { keyOf, nav, tabOf } from '#lib/nav.svelte.js';
+	import { keyOf, nav, screenOf } from '#lib/nav.svelte.js';
 	import QuickCapture from '#lib/inbox/QuickCapture.svelte';
 	import InboxScreen from '#lib/inbox/InboxScreen.svelte';
 	import { inbox } from '#lib/inbox/state.svelte.js';
@@ -36,6 +36,9 @@
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Star from '@lucide/svelte/icons/star';
 	import Flag from '@lucide/svelte/icons/flag';
+	import LinkIcon from '@lucide/svelte/icons/link';
+	import LayoutGrid from '@lucide/svelte/icons/layout-grid';
+	import { backFrom } from '#lib/back.js';
 	import CalendarArrowRight from '@lucide/svelte/icons/calendar-arrow-right';
 	import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
 	import WhenSheet from '#lib/WhenSheet.svelte';
@@ -102,7 +105,7 @@
 	 */
 	type View = 'plan' | Lens;
 	// #21: the tab comes from the address (the tab bar lives in the layout and keeps each tab's stack)
-	const tab = $derived(tabOf(page.url, 'today'));
+	const tab = $derived(screenOf(page.url));
 	let capture: QuickCapture;
 	let allLens = $state<Lens>(read('all-lens', 'goal'));
 	const lens = $derived<View>(tab === 'week' ? 'plan' : allLens);
@@ -237,6 +240,18 @@
 	function otherCount(other: PracticeView[]) {
 		const rec = other.filter((x) => x.recommended).length;
 		return rec ? `${rec} рекомендовано · ${other.length}` : String(other.length);
+	}
+
+	// #27: the link icon — the practice's note links go to the «Ссылки» tab
+	async function toggleInLinks(p: PracticeView) {
+		const on = !p.inLinks;
+		const x = week?.practices.find((q) => q.id === p.id);
+		if (x) x.inLinks = on;
+		const r = await fetch('/api/links', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'set', practiceId: p.id, on }) }).catch(() => undefined);
+		if (!r?.ok) {
+			if (x) x.inLinks = !on;
+			problem = 'Не сохранилось: нет связи с сервером';
+		}
 	}
 
 	// task 12: the «Рекомендовать» star — shown at once, saved on the server; back on failure
@@ -664,7 +679,10 @@
 			subtitle={dayName(viewDay) !== dayTitle(viewDay) ? dayTitle(viewDay) : ''}
 			subtitleLink={week && day.planned && !isFutureDay ? { text: `по плану ${day.plannedDone} из ${day.planned}`, href: '/?tab=week' } : undefined}
 			below={dayNav}
-			menu={[{ label: 'Изменить план', icon: Pencil, href: `/plan?start=${start}&from=today` }]}
+			menu={[
+				{ label: 'Изменить план', icon: Pencil, href: `/plan?start=${start}&from=today` },
+				{ label: 'Все практики', icon: LayoutGrid, href: '/?tab=all&from=today' }
+			]}
 		>
 			{#snippet actions()}
 				<button class="icon" class:on={reorder} aria-pressed={reorder} aria-label="Порядок карточек" title="Порядок" onclick={() => (reorder = !reorder)}><GripVertical size={22} /></button>
@@ -681,7 +699,8 @@
 			menu={[
 				{ label: 'Итоги недели', icon: ChartNoAxesColumn, href: `/review?from=week` },
 				{ label: 'Шаблоны недели', icon: Layers, href: `/plan?start=${start}&from=week&templates=1` },
-				{ label: 'Новая неделя с нуля', icon: CalendarPlus, href: `/plan?start=${start}&from=week&fresh=1` }
+				{ label: 'Новая неделя с нуля', icon: CalendarPlus, href: `/plan?start=${start}&from=week&fresh=1` },
+				{ label: 'Все практики', icon: LayoutGrid, href: '/?tab=all&from=week' }
 			]}
 			below={weekNav}
 		>
@@ -695,7 +714,8 @@
 			<a class="review-banner" href="/review?from=week">Итоги прошлой недели готовы</a>
 		{/if}
 	{:else if tab === 'all'}
-		<TopBar help="all" onAdd={() => capture.show()} title="Всё" subtitle="{label(days[0])} – {label(days[6])}" below={weekNav}>
+		<!-- #27: «Все практики» is no longer a tab: it opens from «⋯» and the «Цели» list, «‹» goes back -->
+		<TopBar help="all" title="Все практики" back={backFrom(page.url.searchParams, 'goals')} subtitle="{label(days[0])} – {label(days[6])}" below={weekNav}>
 			{#snippet actions()}
 				<button
 					class="icon"
@@ -1104,6 +1124,14 @@
 							onclick={() => (whenFor = { p, day: viewDay })}><CalendarArrowRight size={22} /></button
 						>
 						{@render star(p)}
+						<button
+							class="link-btn"
+							class:on={p.inLinks}
+							aria-pressed={!!p.inLinks}
+							aria-label="{p.title}: {p.inLinks ? 'убрать из «Ссылок»' : 'в «Ссылки»'}"
+							title={p.inLinks ? 'В «Ссылках»' : 'В «Ссылки»'}
+							onclick={() => toggleInLinks(p)}><LinkIcon size={20} strokeWidth={p.inLinks ? 2.6 : 2} /></button
+						>
 						<a
 							class="flag-btn"
 							class:dim={!week?.milestones?.[p.goalId]}
@@ -1925,15 +1953,17 @@
 		border-radius: 10px;
 	}
 	/* task 13: the icon row, 44 pt targets; a note that does not exist yet is dimmed */
+	/* up to eight 40 pt icons on one line on a phone (#27 added the link) */
 	.actions {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 4px;
+		justify-content: space-between;
+		gap: 0;
 		margin: 0 -6px -4px;
 	}
 	.actions button,
 	.actions .flag-btn {
-		width: 44px;
+		width: 40px;
 		height: 44px;
 		display: inline-flex;
 		align-items: center;
@@ -1945,6 +1975,13 @@
 		color: var(--fg);
 		font: inherit;
 		cursor: pointer;
+	}
+	.actions .link-btn {
+		opacity: 0.45;
+	}
+	.actions .link-btn.on {
+		opacity: 1;
+		color: var(--link);
 	}
 	.actions .flag-btn.dim,
 	.actions button.dim {

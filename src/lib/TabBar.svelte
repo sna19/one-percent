@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Sun from '@lucide/svelte/icons/sun';
 	import CalendarDays from '@lucide/svelte/icons/calendar-days';
-	import LayoutGrid from '@lucide/svelte/icons/layout-grid';
+	import LinkIcon from '@lucide/svelte/icons/link';
 	import InboxIcon from '@lucide/svelte/icons/inbox';
 	import Target from '@lucide/svelte/icons/target';
 
@@ -31,7 +31,7 @@
 		{ id: 'today', label: 'Сегодня', icon: Sun },
 		{ id: 'week', label: 'Неделя', icon: CalendarDays },
 		{ id: 'goals', label: 'Цели', icon: Target },
-		{ id: 'all', label: 'Всё', icon: LayoutGrid }
+		{ id: 'links', label: 'Ссылки', icon: LinkIcon }
 	] as const;
 </script>
 

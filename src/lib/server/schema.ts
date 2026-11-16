@@ -67,6 +67,9 @@ export const practices = sqliteTable('practices', {
 	checklistMarks: integer('checklist_marks', { mode: 'boolean' }).notNull().default(false),
 	/** Task 12: shown first in «Сделать что-то ещё»; does not plan it and does not count for the day. */
 	recommended: integer('recommended', { mode: 'boolean' }).notNull().default(false),
+	/** #27: the practice's note links are on the «Ссылки» tab; its place among the groups there */
+	inLinks: integer('in_links', { mode: 'boolean' }).notNull().default(false),
+	linksOrder: integer('links_order').notNull().default(0),
 	/**
 	 * #24 — a finite practice (a book): its whole volume in the practice's unit; null — endless as before.
 	 * Position = volume_start + the amounts marked from volume_since on. «Я на стр. N» moves volume_start so the
