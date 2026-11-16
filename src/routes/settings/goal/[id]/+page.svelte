@@ -10,6 +10,8 @@
 	import Archive from '@lucide/svelte/icons/archive';
 	import Flag from '@lucide/svelte/icons/flag';
 	import GoalImage from '#lib/GoalImage.svelte';
+	import PracticeTree from '#lib/PracticeTree.svelte';
+	import { buildTree } from '#lib/tree.js';
 	import RichEditor from '#lib/RichEditor.svelte';
 	import { richDoc } from '#lib/note.js';
 	import GoalImagePicker from '#lib/GoalImagePicker.svelte';
@@ -83,10 +85,9 @@
 	let attaching = $state(false);
 	let addError = $state<string | null>(null);
 	const others = $derived(
-		data.goals
-			.filter((g) => g.id !== g0.id && !g.archivedAt)
-			.map((g) => ({ goal: g, practices: data.practices.filter((p) => p.goalId === g.id && !p.archivedAt) }))
-			.filter((o) => o.practices.length)
+		buildTree(data.categories, data.goals, data.practices)
+			.map((c) => ({ ...c, goals: c.goals.filter((g) => g.id !== g0.id && g.practices.length) }))
+			.filter((c) => c.goals.length)
 	);
 	async function post(action: string, body: Record<string, unknown>) {
 		const r = await fetch(`/api/settings/${action}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => undefined);
@@ -268,16 +269,8 @@
 				<button class="done" onclick={() => (attaching = false)}>Готово</button>
 			</header>
 			<div class="sheet-body">
-				{#each others as o (o.goal.id)}
-					<p class="from">{o.goal.title}</p>
-					<ul class="list">
-						{#each o.practices as p (p.id)}
-							<li><button class="pick" onclick={() => attach(p, o.goal.title)}>{p.title}</button></li>
-						{/each}
-					</ul>
-				{:else}
-					<p class="status">Других практик нет.</p>
-				{/each}
+				<!-- #25: the practice navigator, «pick one»; the goal's own practices are left out -->
+				<PracticeTree tree={others} storageKey="attach-tree" mode="one" onPick={(p, g) => attach(p, g.title)} />
 			</div>
 		</div>
 	{/if}
@@ -445,25 +438,6 @@
 	}
 	.sheet-body {
 		overflow-y: auto;
-	}
-	.from {
-		margin: 10px 0 4px;
-		font-size: 12px;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		color: var(--muted);
-	}
-	.pick {
-		width: 100%;
-		min-height: 44px;
-		padding: 0 14px;
-		border: none;
-		background: none;
-		color: var(--text);
-		font: inherit;
-		text-align: left;
-		cursor: pointer;
 	}
 	.image {
 		display: flex;

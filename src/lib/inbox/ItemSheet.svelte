@@ -8,6 +8,7 @@
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
 	import Maximize2 from '@lucide/svelte/icons/maximize-2';
 	import DayIcon from '../DayIcon.svelte';
+	import PracticeTree from '../PracticeTree.svelte';
 	import { colorOf } from '../palette.js';
 	import { treeOfPractices } from '../tree.js';
 	import { dayTitle } from '../today.js';
@@ -42,8 +43,17 @@
 	// svelte-ignore state_referenced_locally
 	const original = text;
 
-	const tree = $derived(treeOfPractices(practices));
 	const sort = $derived(inbox.sort);
+	const tree = $derived(treeOfPractices(practices));
+	/** all goals by category, also those without practices — for «Новая практика» */
+	const goalTree = $derived(
+		(sort?.categories ?? []).map((c) => ({
+			id: c.id,
+			name: c.name,
+			color: c.color,
+			goals: (sort?.goals ?? []).filter((g) => g.categoryId === c.id).map((g) => ({ ...g, practices: [] as PracticeView[] }))
+		}))
+	);
 	const plannedOn = $derived(new Set(sort?.planned[day] ?? []));
 	const plannedList = $derived(practices.filter((p) => plannedOn.has(p.id)));
 
@@ -116,16 +126,15 @@
 {/snippet}
 
 {#snippet practiceTree(pick: (p: PracticeView) => void, markPlanned: boolean)}
-	{#each tree as c (c.id)}
-		<p class="cat" style="--c:{colorOf(c.color).light}">{c.name}</p>
-		<ul class="list">
-			{#each c.goals as g (g.id)}
-				{#each g.practices as p (p.id)}
-					{@render practiceButton(p, pick, markPlanned && plannedOn.has(p.id) ? 'в плане' : '')}
-				{/each}
-			{/each}
-		</ul>
-	{/each}
+	<!-- #25: the practice navigator in «pick one» mode -->
+	<PracticeTree
+		{tree}
+		storageKey="inbox-pick-tree"
+		mode="one"
+		onPick={(p) => !busy && pick(p)}
+		note={markPlanned ? (p) => (plannedOn.has(p.id) ? 'в плане' : '') : undefined}
+		chips={[{ key: 'star', label: '★ Рекомендовать', keep: (p) => p.recommended }]}
+	/>
 {/snippet}
 
 <div class="backdrop" role="presentation" onclick={close}></div>
@@ -184,14 +193,7 @@
 			{@render practiceTree(toDay, true)}
 		{:else if step === 'goal'}
 			<p class="muted">Название — первая строка записи, остальное — в заметку «Всегда».</p>
-			{#each sort?.categories ?? [] as c (c.id)}
-				<p class="cat" style="--c:{colorOf(c.color).light}">{c.name}</p>
-				<ul class="list">
-					{#each (sort?.goals ?? []).filter((g) => g.categoryId === c.id) as g (g.id)}
-						<li><button class="row" disabled={busy} onclick={() => newPractice(g.id)}>{g.title}</button></li>
-					{/each}
-				</ul>
-			{/each}
+			<PracticeTree tree={goalTree} storageKey="inbox-goal-tree" mode="goal" onPickGoal={(g) => !busy && newPractice(g.id)} />
 		{:else}
 			<p class="muted">Название — первая строка записи, остальное — в «Направление — зачем».</p>
 			<ul class="list">

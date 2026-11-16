@@ -45,7 +45,7 @@
 	import { amountLabel, budgetLabel, remaining, todayAdds } from '#lib/milestones.js';
 	import FilePen from '@lucide/svelte/icons/file-pen';
 	import NoteHead from '#lib/NoteHead.svelte';
-	import Tree from '#lib/Tree.svelte';
+	import PracticeTree from '#lib/PracticeTree.svelte';
 	import { treeOfPractices } from '#lib/tree.js';
 	import DayIcon from '#lib/DayIcon.svelte';
 	import NoteView from '#lib/NoteView.svelte';
@@ -913,7 +913,15 @@
 			{/if}
 			{#if otherTree.length}
 				<div class="other-tree">
-					<Tree tree={otherTree} storageKey="today-tree-collapsed">
+					<PracticeTree
+						tree={otherTree}
+						storageKey="today-tree-collapsed"
+						search={day.other.length > 6}
+						chips={[
+							{ key: 'week', label: 'В плане недели', keep: (p) => days.some((d) => isPlanned(p.id, d)) },
+							...(week?.plan?.focus?.length ? [{ key: 'focus', label: 'В фокусе', keep: (p: PracticeView) => !!week?.plan?.focus?.includes(p.goalId) }] : [])
+						]}
+					>
 						{#snippet goalExtra(g)}
 							<!-- Spec 009 B in the tree: the goal line sits on the goal's heading, once for its cards -->
 							{@render mline(g.id, '')}
@@ -921,7 +929,7 @@
 						{#snippet practice(p)}
 							{@render card(p, false, 'tree', [])}
 						{/snippet}
-					</Tree>
+					</PracticeTree>
 				</div>
 			{/if}
 		</details>

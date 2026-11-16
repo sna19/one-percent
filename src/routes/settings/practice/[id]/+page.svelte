@@ -4,6 +4,9 @@
 	import { goto } from '$app/navigation';
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { todayStr } from '#lib/dates.js';
+	import PracticeTree from '#lib/PracticeTree.svelte';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import { buildTree } from '#lib/tree.js';
 	import TopBar from '#lib/TopBar.svelte';
 	import NoteSheet from '#lib/NoteSheet.svelte';
 	import { autosaver } from '#lib/autosave.svelte.js';
@@ -108,7 +111,8 @@
 
 	const WD = [1, 2, 3, 4, 5, 6, 0];
 	const NAMES = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
-	const goalsActive = $derived(data.goals.filter((g) => !g.archivedAt || g.id === p0.goalId));
+	let pickingGoal = $state(false);
+	const goalTree = $derived(buildTree(data.categories, data.goals, []).filter((c) => c.goals.length));
 	const formatsActive = $derived(data.formats.filter((f) => !f.archivedAt || f.id === p0.formatId));
 	const asView = $derived({ ...p0, title, note, goalTitle: '', color: 'slate' } as unknown as PracticeView);
 </script>
@@ -124,12 +128,29 @@
 
 	<div class="card">
 		<label>Название <input bind:value={title} oninput={changed} /></label>
-		<label
-			>Цель
-			<select bind:value={goalId} onchange={changed}>
-				{#each goalsActive as g (g.id)}<option value={g.id}>{g.title}</option>{/each}
-			</select>
-		</label>
+		<!-- #25: the goal is picked in the practice navigator (down to goals) -->
+		<div class="goal-pick">
+			<span class="glabel">Цель</span>
+			<button class="goal-btn" onclick={() => (pickingGoal = true)}>{data.goals.find((g) => g.id === goalId)?.title ?? '—'}<ChevronRight size={18} /></button>
+		</div>
+		{#if pickingGoal}
+			<div class="backdrop" role="presentation" onclick={() => (pickingGoal = false)}></div>
+			<div class="sheet" role="dialog" aria-label="Цель практики">
+				<header><span class="sheet-title">Цель практики</span><button class="done" onclick={() => (pickingGoal = false)}>Готово</button></header>
+				<div class="sheet-body">
+					<PracticeTree
+						tree={goalTree}
+						storageKey="practice-goal-tree"
+						mode="goal"
+						onPickGoal={(g) => {
+							goalId = g.id;
+							pickingGoal = false;
+							changed();
+						}}
+					/>
+				</div>
+			</div>
+		{/if}
 		<label
 			>Формат
 			<select bind:value={formatId} onchange={changed}>
@@ -207,6 +228,71 @@
 		margin: -4px 0 6px;
 		font-size: 13px;
 		color: var(--muted);
+	}
+	.goal-pick {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.glabel {
+		font-size: 13px;
+		color: var(--muted);
+	}
+	.goal-btn {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		min-height: 44px;
+		padding: 8px 10px;
+		border-radius: 10px;
+		border: 1px solid var(--line);
+		background: var(--bg);
+		color: var(--text);
+		font: inherit;
+		font-size: 17px;
+		text-align: left;
+		cursor: pointer;
+	}
+	.backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 20;
+		background: rgb(0 0 0 / 0.35);
+	}
+	.sheet {
+		position: fixed;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 21;
+		max-width: 560px;
+		max-height: 80vh;
+		margin: 0 auto;
+		display: flex;
+		flex-direction: column;
+		padding: 8px 16px calc(env(safe-area-inset-bottom) + 12px);
+		background: var(--bg);
+		border-radius: 16px 16px 0 0;
+	}
+	.sheet header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		min-height: 44px;
+	}
+	.sheet-title {
+		font-weight: 700;
+	}
+	.done {
+		border: none;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.sheet-body {
+		overflow-y: auto;
 	}
 	.hint {
 		margin: 0;
