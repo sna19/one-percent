@@ -138,21 +138,37 @@
 	const allPractices = $derived.by(() => {
 		const q = nq(allQuery.trim());
 		const ps = q ? practices.filter((p) => [p.title, p.goalTitle, p.categoryName, p.formatName ?? ''].some((t) => nq(t).includes(q))) : practices;
-		return lens === 'goal' ? [...ps].sort((a, b) => a.categoryOrder - b.categoryOrder || a.categoryId - b.categoryId || a.goalOrder - b.goalOrder || a.goalId - b.goalId) : ps;
+		if (lens !== 'goal') return ps;
+		// owner (2026-11-16): goals with a ★ practice first, then the categories in the settings order
+		const star = new Set(ps.filter((p) => p.recommended).map((p) => p.goalId));
+		const rank = (p: PracticeView) => (star.has(p.goalId) ? 0 : 1);
+		return [...ps].sort(
+			(a, b) => rank(a) - rank(b) || (rank(a) ? a.categoryOrder - b.categoryOrder || a.categoryId - b.categoryId : 0) || a.goalOrder - b.goalOrder || a.goalId - b.goalId
+		);
 	});
+	/** the section of a goal row on «Всё»: «★» or its category */
+	const starGoals = $derived(new Set(allPractices.filter((p) => p.recommended).map((p) => p.goalId)));
+	const sectionOf = (g: { practices: PracticeView[] }) => (starGoals.has(g.practices[0].goalId) ? 'star' : `c${g.practices[0].categoryId}`);
+	// sections fold, and what is folded is remembered on this device
+	let foldedSections = $state<string[]>(read('all-sections-folded', []));
+	function toggleSection(k: string) {
+		foldedSections = foldedSections.includes(k) ? foldedSections.filter((x) => x !== k) : [...foldedSections, k];
+		write('all-sections-folded', foldedSections);
+	}
+	const sectionShown = (g: { practices: PracticeView[] }) => isPlan || lens !== 'goal' || !!allQuery.trim() || !foldedSections.includes(sectionOf(g));
 	const groups = $derived(
 		isPlan
 			? groupPractices(planPractices(practices, days, isPlanned, amountOf), 'goal')
 			: groupPractices(allPractices, lens as Lens)
 	);
 	/** the category heading goes before the first goal of each category (goal lens on «Всё») */
-	const catStart = (i: number) =>
-		!isPlan && lens === 'goal' && (i === 0 || groups[i - 1].practices[0].categoryId !== groups[i].practices[0].categoryId);
+	const catStart = (i: number) => !isPlan && lens === 'goal' && (i === 0 || sectionOf(groups[i - 1]) !== sectionOf(groups[i]));
 	const summary = $derived(planWeekSummary(practices, days, isPlanned, amountOf));
 	/** Spec 007 E: Today pages by day — this week and next. */
 	let viewDay = $state(todayStr());
 	const isFutureDay = $derived(viewDay > today);
-	const minDay = $derived(weekStart(today));
+	// owner (2026-11-16): back into past weeks as far as the history goes; forward — this week and next
+	const minDay = '2000-01-02';
 	const maxDay = $derived(addDays(weekStart(today), 13));
 	// Spec 010 «Ротация»: weeks where a goal had no practices in the plan do not add to «N дней без»
 	const paused = $derived(new Map(Object.entries(week?.pausedWeeks ?? {}).map(([g, ws]) => [Number(g), new Set(ws)])));
@@ -751,9 +767,17 @@
 			{#each groups as g, i (g.key)}
 				{#if catStart(i)}
 					{@const p0 = g.practices[0]}
-					<div class="cathead"><span class="cdot" style="--c:{colorOf(p0.color).light}"></span>{p0.categoryName}</div>
+					{@const k = sectionOf(g)}
+					{@const folded = !allQuery.trim() && foldedSections.includes(k)}
+					<button class="cathead" aria-expanded={!folded} onclick={() => toggleSection(k)}>
+						<svg class="chev" class:open={!folded} viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 1.5 7 5 3.5 8.5" /></svg>
+						{#if k === 'star'}★ Рекомендованные{:else}<span class="cdot" style="--c:{colorOf(p0.color).light}"></span>{p0.categoryName}{/if}
+						{#if folded}<span class="count">{groups.filter((x) => sectionOf(x) === k).length}</span>{/if}
+					</button>
 				{/if}
-				{#if g.practices.length === 1}
+				{#if !sectionShown(g)}
+					<!-- folded section -->
+				{:else if g.practices.length === 1}
 					{@const p = g.practices[0]}
 					{@render practiceRow(p, g.title, p.title !== g.title ? p.title : '', false)}
 				{:else}
@@ -1375,7 +1399,14 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		margin-top: 10px;
+		min-height: 36px;
+		margin-top: 6px;
+		padding: 0;
+		border: none;
+		background: none;
+		font-family: inherit;
+		text-align: left;
+		cursor: pointer;
 		font-size: 12px;
 		font-weight: 600;
 		text-transform: uppercase;

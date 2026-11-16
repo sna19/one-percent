@@ -204,7 +204,7 @@
 				<p class="lead">{realism}</p>
 				<div class="days" role="img" aria-label="Выполнение плана по дням">
 					{#each r.days as d (d.date)}
-						{@const linked = d.date >= weekStart(today) && d.date <= addDays(weekStart(today), 13)}
+						{@const linked = d.date <= addDays(weekStart(today), 13)}
 						<svelte:element this={linked ? 'a' : 'div'} class="day obj" class:weak={r.weakDays.includes(d.date)} href={linked ? `/?day=${d.date}` : undefined}>
 							<span class="col"><span style="height:{d.planned ? pct(d.done, d.planned) : 0}%"></span></span>
 							<small>{dayName(d.date)}</small>
