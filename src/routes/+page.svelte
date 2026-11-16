@@ -34,6 +34,8 @@
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Star from '@lucide/svelte/icons/star';
+	import Flag from '@lucide/svelte/icons/flag';
+	import { remaining } from '#lib/milestones.js';
 	import FilePen from '@lucide/svelte/icons/file-pen';
 	import NoteHead from '#lib/NoteHead.svelte';
 	import Tree from '#lib/Tree.svelte';
@@ -602,7 +604,7 @@
 						<svg class="chev" class:open={isOpen} viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 1.5 7 5 3.5 8.5" /></svg>
 						<span class="gtext">
 							<span>{g.title} <span class="count">{g.practices.length}</span></span>
-							{#if n >= 2}<small>{without(n)}</small>{/if}
+							{@render goalSmall(lens !== 'format' ? g.practices[0].goalId : null, n >= 2 ? without(n) : '')}
 						</span>
 					</button>
 					{#each days as d (d)}
@@ -804,6 +806,7 @@
 					}}>{#if counts(a, p)}<svg viewBox="0 0 12 12"><path d="M2.5 6.2 5 8.6 9.6 3.4" /></svg>{/if}</button
 				>
 			{/if}
+			<div class="chead-col">
 			<button
 				class="chead"
 				aria-expanded={isOpen}
@@ -814,8 +817,9 @@
 				}}
 			>
 				<span class="ctitle">{p.title}{#if bonus}<span class="tag">бонус</span>{/if}</span>
-				{#if p.goalTitle !== p.title && list !== 'tree'}<small>{p.goalTitle}</small>{/if}
 			</button>
+			{@render mline(p.goalId, p.goalTitle !== p.title && list !== 'tree' ? p.goalTitle : '')}
+			</div>
 			{#if list === 'other' || list === 'tree'}{@render star(p)}{/if}
 			<span class="dose" class:count={auto}
 				>{auto ? `${st.checked} из ${st.total}` : a && !counts(a, p) ? `${a} из ${p.normDose} ${p.unit}` : a ? `${a} ${p.unit}` : doseHint(p)}</span
@@ -894,6 +898,24 @@
 	</div>
 {/snippet}
 
+{#snippet mline(goalId: number, goalTitle: string)}
+	<!-- Spec 009 B: «goal · flag time left» under the title; a tap opens the goal screen, not the card -->
+	{@const m = week?.milestones?.[goalId]}
+	<a class="mline" href="/settings/goal/{goalId}?from={tab}" onclick={(e) => e.stopPropagation()}
+		>{#if goalTitle}<span class="mgoal">{goalTitle}</span>{/if}{#if m}{#if goalTitle}<span class="sep">·</span>{/if}<Flag size={11} /><span
+				>{remaining(m.dueDate, today) || 'без срока'}</span
+			>{:else}{#if goalTitle}<span class="sep">·</span>{/if}<span class="none">нет майлстона</span>{/if}</a
+	>
+{/snippet}
+
+{#snippet goalSmall(goalId: number | null, text: string)}
+	<!-- Spec 009 B: the same milestone line in goal headings of «Неделя» and «Всё» -->
+	{@const m = goalId === null ? undefined : week?.milestones?.[goalId]}
+	{#if text || m}
+		<small class="gsmall">{text}{#if m}{#if text}<span> · </span>{/if}<Flag size={10} />{remaining(m.dueDate, today) || 'без срока'}{/if}</small>
+	{/if}
+{/snippet}
+
 {#snippet star(p: PracticeView)}
 	<button
 		class="star"
@@ -927,7 +949,7 @@
 	{@const n = nOf(p)}
 	<button class="name pname" class:indent onclick={() => openSheet(p, today)} aria-label="{p.title}: доза и заметка">
 		<span>{title}</span>
-		{#if sub || n >= 2}<small>{[sub, n >= 2 ? without(n) : ''].filter(Boolean).join(' · ')}</small>{/if}
+		{@render goalSmall(lens !== 'format' && !indent ? p.goalId : null, [sub, n >= 2 ? without(n) : ''].filter(Boolean).join(' · '))}
 	</button>
 	{#each days as d (d)}
 		{@const a = amountOf(p.id, d)}
@@ -1336,8 +1358,42 @@
 		font-size: 16px;
 		font-weight: 600;
 	}
-	.chead small {
+	.gsmall {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		flex-wrap: wrap;
+	}
+	.chead-col {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		min-width: 0;
+	}
+	/* Spec 009 B: quiet goal line; it must not make the card taller */
+	.mline {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		max-width: 100%;
 		font-size: 13px;
+		line-height: 1.2;
+		opacity: 0.75;
+		color: inherit;
+		text-decoration: none;
+		white-space: nowrap;
+	}
+	.mline .mgoal {
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.mline .sep {
+		margin: 0 1px;
+	}
+	.mline :global(svg) {
+		flex: none;
+	}
+	.mline .none {
 		opacity: 0.75;
 	}
 	.tag {

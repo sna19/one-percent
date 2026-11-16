@@ -61,4 +61,6 @@ export interface WeekData {
 	 * practices in it. Such weeks do not add to «N дней без». Missing in data cached before this field.
 	 */
 	pausedWeeks?: Record<number, DateStr[]>;
+	/** Spec 009: goalId → its open milestone. Missing in data cached before this field. */
+	milestones?: Record<number, import('./milestones.js').MilestoneView>;
 }

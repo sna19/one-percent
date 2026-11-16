@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { backFrom } from '#lib/back.js';
 	import { goto } from '$app/navigation';
 	import { onDestroy, untrack } from 'svelte';
 	import TopBar from '#lib/TopBar.svelte';
@@ -82,7 +83,7 @@
 <svelte:head><title>{title} · Настройки</title></svelte:head>
 
 <main>
-	<TopBar help="practice" title={title || 'Практика'} back={page.url.searchParams.get('from') === 'inbox' ? { label: 'Входящие', href: '/?tab=inbox' } : { label: 'Настройки', href: '/settings' }} menu={[{ label: 'В архив', icon: Archive, onclick: archive }]} />
+	<TopBar help="practice" title={title || 'Практика'} back={page.url.searchParams.get('from') ? backFrom(page.url.searchParams) : { label: 'Настройки', href: '/settings' }} menu={[{ label: 'В архив', icon: Archive, onclick: archive }]} />
 
 	<p class="status" aria-live="polite">
 		{saver.state.status === 'saving' ? 'Сохраняю…' : saver.state.status === 'saved' ? 'Сохранено' : saver.state.status === 'error' ? saver.state.message : ''}
