@@ -6,30 +6,59 @@
 	import type { PlanView, PracticeView } from './types.js';
 
 	/**
-	 * Spec 012 B — «Когда»: plan a practice from its card. Seven days of this or next week (past days are
-	 * off); a tap plans or unplans a day at once. «Перенести на завтра» moves the day of the card (with its
-	 * day note) to the next day; «Ещё и завтра» adds the next day. «Открыть в плане недели» — the editor at
-	 * this practice's row.
+	 * Spec 012 B — «Когда»: plan a practice. Seven days of this or next week (past days are off); a tap plans
+	 * or unplans a day at once; the practice's usual days (default_days) are marked. «И в шаблон …» repeats
+	 * the change in the template the week was built from. From a card (`day` given) there are also
+	 * «Перенести на завтра» and «Ещё и завтра»; from the goal screen and the navigator — «Обычные дни».
+	 * «#19 + #22, уточнение»: one sheet everywhere; after a practice is added to a goal it opens itself as
+	 * «Добавить в неделю?» with «Позже».
 	 */
 	interface Props {
-		p: PracticeView;
-		/** the day the card is shown for */
-		day: DateStr;
+		p: { id: number; title: string; defaultDays?: number[] };
+		/** the day of the card it is opened from; without it the sheet is not about a card */
+		day?: DateStr;
 		today: DateStr;
 		/** the practice's amount on `day`, to know whether it is done */
-		amount: number | undefined;
+		amount?: number;
 		from: string;
+		heading?: string;
+		/** «Позже» instead of «Готово» until something is planned */
+		later?: boolean;
 		onClose: () => void;
 		onChanged: () => void;
 	}
-	let { p, day, today, amount, from, onClose, onChanged }: Props = $props();
+	let { p, day, today, amount, from, heading = 'Когда', later = false, onClose, onChanged }: Props = $props();
 
+	const card = $derived(day !== undefined);
+	const at = $derived(day ?? today);
 	const thisWeek = $derived(weekStart(today));
 	// svelte-ignore state_referenced_locally
-	let start = $state(weekStart(day) === weekStart(today) ? weekStart(today) : addDays(weekStart(today), 7));
+	let start = $state(weekStart(day ?? today) === weekStart(today) ? weekStart(today) : addDays(weekStart(today), 7));
 	let plans = $state<Record<DateStr, PlanView | null>>({});
+	let tpls = $state<Record<DateStr, { id: number; name: string } | null>>({});
+	// svelte-ignore state_referenced_locally
+	let usual = $state<number[]>(p.defaultDays ?? []);
 	let busy = $state(false);
 	let error = $state<string | null>(null);
+	let touched = $state(false);
+
+	// «И в шаблон» is remembered on the device: who keeps a template wants it every time
+	let alsoTpl = $state(false);
+	onMount(() => {
+		try {
+			alsoTpl = localStorage.getItem('when-template') === '1';
+		} catch {
+			/* private mode */
+		}
+	});
+	function setAlso(v: boolean) {
+		alsoTpl = v;
+		try {
+			localStorage.setItem('when-template', v ? '1' : '0');
+		} catch {
+			/* not critical */
+		}
+	}
 
 	async function loadWeek(s: DateStr) {
 		const r = await fetch(`/api/plan?start=${s}&today=${today}`).catch(() => undefined);
@@ -37,24 +66,36 @@
 			error = 'Нет связи с сервером';
 			return;
 		}
-		plans[s] = (await r.json()).plan;
+		const j = await r.json();
+		plans[s] = j.plan;
+		tpls[s] = j.template ?? null;
+		const me = (j.practices as PracticeView[]).find((x) => x.id === p.id);
+		if (me) usual = me.defaultDays;
 	}
 	onMount(() => Promise.all([loadWeek(thisWeek), loadWeek(addDays(thisWeek, 7))]));
 
 	const isPlanned = (d: DateStr) => (plans[weekStart(d)]?.items[p.id] ?? []).includes(d);
 	const hasNote = (d: DateStr) => !!plans[weekStart(d)]?.notes[`${p.id}|${d}`];
-	const tomorrow = $derived(addDays(day, 1));
+	const isUsual = (d: DateStr) => usual.includes(new Date(`${d}T12:00`).getDay());
+	const tomorrow = $derived(addDays(at, 1));
 	const lastDay = $derived(addDays(thisWeek, 13));
-	const done = $derived(counts(amount, p));
+	const done = $derived(card && counts(amount, p as PracticeView));
+	const tpl = $derived(tpls[start] ?? null);
 
 	async function post(body: Record<string, unknown>) {
 		busy = true;
 		error = null;
 		try {
-			const r = await fetch('/api/plan', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ today, ...body }) });
+			const withTpl = alsoTpl && !!tpls[weekStart(String(body.date ?? body.start))];
+			const r = await fetch('/api/plan', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ today, ...body, ...(withTpl && body.action !== 'move' ? { template: true } : {}) })
+			});
 			if (!r.ok) throw new Error((await r.json().catch(() => null))?.message ?? 'Не сохранилось');
-			const touched = new Set([weekStart(String(body.date)), weekStart(String(body.to ?? body.date))]);
-			await Promise.all([...touched].map(loadWeek));
+			const weeks = new Set([weekStart(String(body.date ?? body.start)), weekStart(String(body.to ?? body.date ?? body.start))]);
+			await Promise.all([...weeks].map(loadWeek));
+			touched = true;
 			onChanged();
 			return true;
 		} catch (e) {
@@ -71,23 +112,26 @@
 		post({ action: 'item', start: weekStart(d), practiceId: p.id, date: d, planned: !on });
 	}
 	async function move() {
-		if (await post({ action: 'move', start: weekStart(day), practiceId: p.id, date: day, to: tomorrow })) onClose();
+		if (await post({ action: 'move', start: weekStart(at), practiceId: p.id, date: at, to: tomorrow })) onClose();
 	}
 	const alsoTomorrow = () => post({ action: 'item', start: weekStart(tomorrow), practiceId: p.id, date: tomorrow, planned: true });
+	const usualDays = () => post({ action: 'row', start, practiceId: p.id, mode: 'default' });
 
 	const DAYS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
-	const canMove = $derived(day >= today && isPlanned(day) && !done && tomorrow <= lastDay);
+	const usualLabel = $derived([1, 2, 3, 4, 5, 6, 0].filter((d) => usual.includes(d)).map((d) => DAYS[d]).join(' '));
+	const canMove = $derived(card && at >= today && isPlanned(at) && !done && tomorrow <= lastDay);
 	const canAlso = $derived(tomorrow >= today && tomorrow <= lastDay && !isPlanned(tomorrow));
+	const canUsual = $derived(usual.length > 0 && weekDays(start).some((d) => d >= today && isUsual(d) !== isPlanned(d)));
 </script>
 
 <div class="backdrop" role="presentation" onclick={onClose}></div>
-<div class="sheet" role="dialog" aria-label="Когда: {p.title}">
+<div class="sheet" role="dialog" aria-label="{heading}: {p.title}">
 	<header>
 		<div>
-			<p class="title">Когда</p>
+			<p class="title">{heading}</p>
 			<p class="sub">{p.title}</p>
 		</div>
-		<button class="done" onclick={onClose}>Готово</button>
+		<button class="done" onclick={onClose}>{later && !touched ? 'Позже' : 'Готово'}</button>
 	</header>
 
 	<div class="seg" role="radiogroup" aria-label="Неделя">
@@ -101,23 +145,34 @@
 			<button
 				class="d"
 				class:on
-				class:cur={d === day}
+				class:cur={card && d === day}
+				class:usual={isUsual(d)}
 				disabled={busy || d < today || !plans[start] && plans[start] !== null}
 				aria-pressed={on}
-				aria-label="{dayTitle(d)}: {on ? 'в плане' : 'не в плане'}"
+				aria-label="{dayTitle(d)}: {on ? 'в плане' : 'не в плане'}{isUsual(d) ? ', обычный день' : ''}"
 				onclick={() => toggle(d)}><small>{DAYS[new Date(`${d}T12:00`).getDay()]}</small><b>{Number(d.slice(8))}</b></button
 			>
 		{/each}
 	</div>
 
-	<div class="quick">
-		<button disabled={busy || !canMove} onclick={move}>Перенести на завтра</button>
-		<button disabled={busy || !canAlso} onclick={alsoTomorrow}>Ещё и завтра</button>
-	</div>
-	{#if done && isPlanned(day)}<p class="hint">Сегодня уже сделано — переносить нечего.</p>{/if}
+	{#if usual.length}<p class="hint">Точка — обычные дни практики: {usualLabel}</p>{/if}
+
+	{#if tpl}
+		<label class="tpl"><input type="checkbox" checked={alsoTpl} onchange={(e) => setAlso(e.currentTarget.checked)} />И в шаблон «{tpl.name}»</label>
+	{/if}
+
+	{#if card || usual.length}<div class="quick">
+		{#if card}
+			<button disabled={busy || !canMove} onclick={move}>Перенести на завтра</button>
+			<button disabled={busy || !canAlso} onclick={alsoTomorrow}>Ещё и завтра</button>
+		{:else if usual.length}
+			<button disabled={busy || !canUsual} onclick={usualDays}>Обычные дни · {usualLabel}</button>
+		{/if}
+	</div>{/if}
+	{#if done && day && isPlanned(day)}<p class="hint">Сегодня уже сделано — переносить нечего.</p>{/if}
 	{#if error}<p class="hint" role="alert">{error}</p>{/if}
 
-	<a class="open" href="/plan?start={weekStart(day) < thisWeek ? thisWeek : weekStart(day)}&from={from}&focus={p.id}">Открыть в плане недели</a>
+	<a class="open" href="/plan?start={start}&from={from}&focus={p.id}">Открыть в плане недели</a>
 </div>
 
 <style>
@@ -225,6 +280,28 @@
 	.d.cur {
 		outline: 2px dashed var(--muted);
 		outline-offset: 2px;
+	}
+	/* the practice's usual day: a dot under the number */
+	.d.usual b::after {
+		content: '';
+		display: block;
+		width: 5px;
+		height: 5px;
+		margin: 2px auto 0;
+		border-radius: 50%;
+		background: currentColor;
+	}
+	.tpl {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		min-height: 40px;
+		font-size: 15px;
+	}
+	.tpl input {
+		width: 20px;
+		height: 20px;
+		margin: 0;
 	}
 	.d:disabled {
 		opacity: 0.35;

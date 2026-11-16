@@ -275,6 +275,45 @@ export function pastWeeks(db: Db, before: DateStr, limit = 12) {
 		.map((w) => ({ weekStart: w.weekStart, ...weekSummary(db, w.weekStart) }));
 }
 
+/**
+ * «#19 + #22, уточнение»: the template a week was built from — directly (`template:N`) or through the
+ * weeks it copied («как прошлая неделя», «как неделя …»). Null when there is none or it is archived.
+ */
+export function weekTemplate(db: Db, start: DateStr): { id: number; name: string } | null {
+	let s: DateStr | null = start;
+	for (let i = 0; s && i < 26; i++) {
+		const row = planRow(db, s);
+		if (!row) return null;
+		const src = row.source;
+		if (src.startsWith('template:')) {
+			const tpl = db.select().from(planTemplates).where(eq(planTemplates.id, Number(src.slice(9)))).get();
+			return tpl && !tpl.archivedAt ? { id: tpl.id, name: tpl.name } : null;
+		}
+		s = src === 'previous' ? addDays(s, -7) : src.startsWith('week:') && src.slice(5) < s ? src.slice(5) : null;
+	}
+	return null;
+}
+
+/** «И в шаблон»: the same weekday on or off in the week's template, so the next weeks get it too. */
+export function setTemplateDay(db: Db, templateId: number, practiceId: number, weekday: number, on: boolean) {
+	checkPractice(db, practiceId);
+	if (on)
+		db.insert(planTemplateItems).values({ templateId, practiceId, weekday }).onConflictDoNothing().run();
+	else
+		db.delete(planTemplateItems)
+			.where(and(eq(planTemplateItems.templateId, templateId), eq(planTemplateItems.practiceId, practiceId), eq(planTemplateItems.weekday, weekday)))
+			.run();
+}
+
+/** The change of a plan day (or of a whole row) repeated in the week's template. */
+export function mirrorToTemplate(db: Db, start: DateStr, today: DateStr, practiceId: number) {
+	const tpl = weekTemplate(db, start);
+	if (!tpl) throw new InputError('Неделя собрана не из шаблона');
+	const planned = new Set(getPlan(db, start)?.items[practiceId] ?? []);
+	for (const d of editableDays(start, today)) setTemplateDay(db, tpl.id, practiceId, weekdayOf(d), planned.has(d));
+	return tpl;
+}
+
 export function listTemplates(db: Db) {
 	return db.select().from(planTemplates).orderBy(asc(planTemplates.sortOrder), asc(planTemplates.id)).all();
 }

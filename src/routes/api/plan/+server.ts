@@ -12,6 +12,9 @@ import {
 	pastWeeks,
 	setPlanItem,
 	setPlanRow,
+	setTemplateDay,
+	mirrorToTemplate,
+	weekTemplate,
 	type PlanSource
 } from '#lib/server/plan.js';
 import { InputError } from '#lib/server/settings.js';
@@ -35,6 +38,8 @@ function plannerData(start: string, today: string) {
 		templates: listTemplates(db).filter((t) => !t.archivedAt),
 		pastWeeks: pastWeeks(db, start),
 		limit: getPlanLimit(db),
+		/** «#19 + #22, уточнение»: the template this week was built from, for «И в шаблон» */
+		template: weekTemplate(db, start),
 		/** Spec 008: planning starts with the inbox */
 		inboxOpen: openCount(db)
 	};
@@ -60,6 +65,11 @@ export async function POST({ request }) {
 			case 'item':
 				if (!Number.isInteger(b.practiceId) || typeof b.planned !== 'boolean') error(400, 'bad item');
 				setPlanItem(db, start, today, b.practiceId, String(b.date), b.planned);
+				if (b.template === true) {
+					const tpl = weekTemplate(db, start);
+					if (!tpl) throw new InputError('Неделя собрана не из шаблона');
+					setTemplateDay(db, tpl.id, b.practiceId, new Date(`${b.date}T12:00:00Z`).getUTCDay(), b.planned);
+				}
 				break;
 			case 'move':
 				if (!Number.isInteger(b.practiceId)) error(400, 'bad move');
@@ -68,6 +78,7 @@ export async function POST({ request }) {
 			case 'row':
 				if (!Number.isInteger(b.practiceId) || !['daily', 'default', 'clear'].includes(b.mode)) error(400, 'bad row');
 				setPlanRow(db, start, today, b.practiceId, b.mode);
+				if (b.template === true) mirrorToTemplate(db, start, today, b.practiceId);
 				break;
 			case 'copyNote':
 				if (!Number.isInteger(b.practiceId)) error(400, 'bad copy');

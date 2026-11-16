@@ -14,6 +14,9 @@
 	import History from '@lucide/svelte/icons/history';
 	import ChevronsDownUp from '@lucide/svelte/icons/chevrons-down-up';
 	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
+	import CalendarDays from '@lucide/svelte/icons/calendar-arrow-right';
+	import WhenSheet from '#lib/WhenSheet.svelte';
+	import { todayStr } from '#lib/dates.js';
 	import type { PageProps } from './$types';
 
 	/** Spec 007 C — settings as a tree: category → goal → practice; each item edits on its own screen. */
@@ -28,6 +31,8 @@
 	let treeComp = $state<{ collapseAll: () => void; expandAll: () => void }>();
 
 	let error = $state<string | undefined>();
+	// «#19 + #22, уточнение»: the same «Когда» sheet from the navigator
+	let when = $state<{ id: number; title: string } | null>(null);
 	let addOpen = $state(false);
 
 	async function api(action: string, body: object) {
@@ -193,6 +198,7 @@
 				<span class="ptitle">{#if (p as { recommended?: boolean }).recommended}<span class="pstar" aria-label="рекомендовано">★</span>{/if}{p.title}</span>
 				<span class="meta">{[formatName(p.formatId), dose(p)].filter(Boolean).join(' · ')}</span>
 			</a>
+			<button class="when" aria-label="{p.title}: когда" title="Когда" onclick={() => (when = { id: p.id, title: p.title })}><CalendarDays size={18} /></button>
 			<button class="handle" aria-label="{p.title}: перетащить" title="Перетащить" onpointerdown={(e) => down(e, 'practice', p.id)}><GripVertical size={20} /></button>
 		{/snippet}
 		{#snippet afterPractices(g)}
@@ -202,6 +208,10 @@
 			<button class="add" onclick={() => newGoal(c.id)}><Plus size={16} /> Цель</button>
 		{/snippet}
 	</PracticeTree>
+
+	{#if when}
+		<WhenSheet p={when} today={todayStr()} from="week" onClose={() => (when = null)} onChanged={() => {}} />
+	{/if}
 
 	<h2 class="refs-title">Справочники</h2>
 	<ul class="refs">
@@ -254,6 +264,18 @@
 	.meta {
 		color: var(--muted);
 		font-size: 13px;
+	}
+	.when {
+		flex: none;
+		width: 40px;
+		height: 44px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+		background: none;
+		color: var(--muted);
+		cursor: pointer;
 	}
 	.handle {
 		flex: none;

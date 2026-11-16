@@ -23,6 +23,8 @@
 	import { amountLabel, budgetLabel, pace, remaining, type MilestoneView } from '#lib/milestones.js';
 	import { todayStr, weekStart } from '#lib/dates.js';
 	import Star from '@lucide/svelte/icons/star';
+	import CalendarDays from '@lucide/svelte/icons/calendar-arrow-right';
+	import WhenSheet from '#lib/WhenSheet.svelte';
 	import { dayTitle } from '#lib/today.js';
 	import type { PageProps } from './$types';
 
@@ -46,10 +48,38 @@
 	let focusIds = $state<number[] | null>(null);
 	let focusMsg = $state<string | null>(null);
 	const inFocus = $derived(!!focusIds?.includes(g0.id));
-	onMount(async () => {
+	// «#19 + #22, уточнение»: this week's plan days on each practice row
+	let planned = $state<Record<number, string[]> | null>(null);
+	async function loadPlan() {
 		const r = await fetch(`/api/plan?start=${weekStart(todayStr())}&today=${todayStr()}`).catch(() => undefined);
-		if (r?.ok) focusIds = (await r.json()).plan?.focus ?? [];
+		if (!r?.ok) return;
+		const plan = (await r.json()).plan;
+		focusIds = plan?.focus ?? [];
+		planned = plan?.items ?? {};
+	}
+	onMount(async () => {
+		await loadPlan();
+		// a practice just created from this goal: its screen came back here — offer the week
+		let fresh: number | null = null;
+		try {
+			fresh = Number(sessionStorage.getItem('when-new')) || null;
+			sessionStorage.removeItem('when-new');
+		} catch {
+			/* private mode */
+		}
+		const p = fresh ? practices.find((x) => x.id === fresh) : undefined;
+		if (p && !planned?.[p.id]?.length) when = { p: { id: p.id, title: p.title }, later: true };
 	});
+	let when = $state<{ p: { id: number; title: string; defaultDays?: number[] }; later: boolean } | null>(null);
+	const WD = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+	const daysOf = (id: number) =>
+		planned
+			? (planned[id] ?? [])
+					.map((d) => new Date(`${d}T12:00`).getDay())
+					.sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7))
+					.map((d) => WD[d])
+					.join(' ') || 'не в плане'
+			: '';
 	async function toggleFocus() {
 		if (!focusIds) return;
 		focusMsg = null;
@@ -127,6 +157,11 @@
 		try {
 			await saver.flush();
 			const { id } = await post('newPractice', { goalId: g0.id });
+			try {
+				sessionStorage.setItem('when-new', String(id));
+			} catch {
+				/* the sheet just won't open by itself */
+			}
 			goto(`/settings/practice/${id}?new=1&${practiceQuery}`);
 		} catch (e) {
 			addError = (e as Error).message;
@@ -138,6 +173,7 @@
 			await post('attach', { id: p.id, goalId: g0.id });
 			attaching = false;
 			await invalidateAll();
+			if (!planned?.[p.id]?.length) when = { p: { id: p.id, title: p.title }, later: true };
 		} catch (e) {
 			addError = (e as Error).message;
 		}
@@ -289,7 +325,10 @@
 	<h2>Практики цели</h2>
 	<ul class="list">
 		{#each practices as p (p.id)}
-			<li><a href="/settings/practice/{p.id}?{practiceQuery}">{p.title}</a></li>
+			<li class="prow">
+				<a href="/settings/practice/{p.id}?{practiceQuery}"><span>{p.title}</span>{#if planned}<small class:off={!planned[p.id]?.length}>{daysOf(p.id)}</small>{/if}</a>
+				<button class="when" aria-label="{p.title}: когда" title="Когда" onclick={() => (when = { p: { id: p.id, title: p.title }, later: false })}><CalendarDays size={20} /></button>
+			</li>
 		{:else}
 			<li class="empty">Пока нет</li>
 		{/each}
@@ -313,6 +352,18 @@
 				<PracticeTree tree={others} storageKey="attach-tree" mode="one" onPick={(p, g) => attach(p, g.title)} />
 			</div>
 		</div>
+	{/if}
+
+	{#if when}
+		<WhenSheet
+			p={when.p}
+			{today}
+			from="goals"
+			heading={when.later ? 'Добавить в неделю?' : 'Когда'}
+			later={when.later}
+			onClose={() => (when = null)}
+			onChanged={loadPlan}
+		/>
 	{/if}
 
 	{#if data.volumesDone.length}
@@ -409,6 +460,36 @@
 	}
 	.empty {
 		color: var(--muted);
+	}
+	.prow {
+		display: flex;
+		align-items: center;
+	}
+	.prow a {
+		flex: 1;
+		min-width: 0;
+		flex-direction: column;
+		align-items: flex-start;
+		justify-content: center;
+	}
+	.prow small {
+		font-size: 12px;
+		color: var(--text);
+	}
+	.prow small.off {
+		color: var(--muted);
+	}
+	.when {
+		flex: none;
+		width: 48px;
+		height: 48px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+		background: none;
+		color: var(--muted);
+		cursor: pointer;
 	}
 	.field {
 		display: flex;

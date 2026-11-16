@@ -293,3 +293,41 @@ describe('«Когда» (Spec 012 B)', () => {
 		expect(next.items[2]).toContain(W2);
 	});
 });
+
+describe('«И в шаблон» (#19 + #22, уточнение)', async () => {
+	const { weekTemplate, setTemplateDay, mirrorToTemplate } = await import('./plan.js');
+	const { planTemplateItems } = await import('./schema.js');
+	const days = (db: ReturnType<typeof setup>, tid: number, pid: number) =>
+		db.select().from(planTemplateItems).all().filter((t) => t.templateId === tid && t.practiceId === pid).map((t) => t.weekday).sort();
+
+	it('finds the template through copied weeks; none for a week from usual days', () => {
+		const db = setup();
+		ensureCurrentPlan(db, W1, W1);
+		expect(weekTemplate(db, W1)).toBeNull();
+		confirmPlan(db, W1, 'Неделя A');
+		const [tpl] = listTemplates(db);
+		applySource(db, W2, W2, `template:${tpl.id}`);
+		expect(weekTemplate(db, W2)).toEqual({ id: tpl.id, name: 'Неделя A' });
+		ensureCurrentPlan(db, '2026-11-15', '2026-11-15'); // «как прошлая неделя»
+		expect(weekTemplate(db, '2026-11-15')).toEqual({ id: tpl.id, name: 'Неделя A' });
+	});
+
+	it('a day goes into the template and out of it; a row mirrors today and later only', () => {
+		const db = setup();
+		ensureCurrentPlan(db, W1, W1);
+		confirmPlan(db, W1, 'Неделя A');
+		const [tpl] = listTemplates(db);
+		setTemplateDay(db, tpl.id, 1, 3, true);
+		setTemplateDay(db, tpl.id, 1, 3, true);
+		expect(days(db, tpl.id, 1)).toEqual([3]);
+		setTemplateDay(db, tpl.id, 1, 3, false);
+		expect(days(db, tpl.id, 1)).toEqual([]);
+		applySource(db, W2, W2, `template:${tpl.id}`);
+		// Wednesday: Sun–Tue are past and stay as they are in the template
+		setTemplateDay(db, tpl.id, 1, 0, true);
+		setPlanRow(db, W2, '2026-11-11', 1, 'daily');
+		mirrorToTemplate(db, W2, '2026-11-11', 1);
+		expect(days(db, tpl.id, 1)).toEqual([0, 3, 4, 5, 6]);
+		expect(() => mirrorToTemplate(db, '2026-11-22', '2026-11-22', 1)).toThrow(InputError);
+	});
+});
