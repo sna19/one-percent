@@ -402,6 +402,12 @@
 			if (s === start) week = cached ?? week;
 		}
 		queued = (await pending()).length;
+		// #24: a volume finished while offline is written to the goal's path once everything is sent
+		if (!offline && !queued && s === start && week?.volumes)
+			for (const [id, v] of Object.entries(week.volumes)) {
+				const p = week.practices.find((x) => x.id === Number(id));
+				if (p && !v.doneOn && volPos(p) >= v.total) await volumeCheck(p);
+			}
 	}
 
 	function apply(w: WeekData, pid: number, date: string, amount: number) {
