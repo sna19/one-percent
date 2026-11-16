@@ -92,6 +92,18 @@
 	const sessionCount = $derived(planned.size);
 	const tooMany = $derived(data?.limit != null && practiceCount > data.limit);
 
+	// Spec 012 B: «Открыть в плане недели» — scroll to the practice's row and light it for a moment
+	let focusPid = $state<number | null>(null);
+	let focused = false;
+	$effect(() => {
+		const want = Number(page.url.searchParams.get('focus'));
+		if (!data || focused || !want) return;
+		focused = true;
+		focusPid = want;
+		requestAnimationFrame(() => document.querySelector(`[data-pid="${want}"]`)?.scrollIntoView({ block: 'center' }));
+		setTimeout(() => (focusPid = null), 2500);
+	});
+
 	// Spec 010: focus of the week — up to three goals, only goals with practices in this plan
 	const planGoals = $derived(groups.filter((g) => g.practices.some((p) => (data?.plan?.items[p.id] ?? []).length)));
 	const focus = $derived(data?.plan?.focus ?? []);
@@ -334,7 +346,7 @@
 				{#each groups as g (g.key)}
 					{#if g.practices.length > 1 || g.practices[0].title !== g.title}<div class="goal">{g.title}</div>{/if}
 					{#each g.practices as p (p.id)}
-						<div class="name">
+						<div class="name" class:hl={focusPid === p.id} data-pid={p.id}>
 							<span>{p.title}</span>
 							<span class="quick">
 								<button disabled={busy} onclick={() => row(p, 'daily')}>каждый день</button>
@@ -464,6 +476,11 @@
 {/if}
 
 <style>
+	.name.hl {
+		border-radius: 8px;
+		background: color-mix(in oklab, var(--text) 12%, transparent);
+		transition: background-color 0.6s;
+	}
 	.focus {
 		display: flex;
 		flex-wrap: wrap;

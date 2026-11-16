@@ -52,6 +52,17 @@
 <TabBar tab={nav.tab} inboxCount={inbox.count} onselect={select} />
 
 <style>
+	/* Spec 012 A: an object's name is a link to its screen — the same look everywhere: no colour change,
+	   underlined while pressed */
+	:global(a.obj) {
+		color: inherit;
+		text-decoration: none;
+		-webkit-tap-highlight-color: transparent;
+	}
+	:global(a.obj:active) {
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
 	/* nested screens end above the tab bar; the root screen has its own padding */
 	.tab-spacer {
 		height: calc(env(safe-area-inset-bottom) + 64px);

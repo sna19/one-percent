@@ -16,6 +16,8 @@ export interface TodayLists {
 	planned: number;
 	/** goal to do first, among goals with unfinished plan today */
 	top: string | undefined;
+	/** Spec 012 A: the goal of `top`, for its link */
+	topGoalId: number | undefined;
 }
 
 export function todayLists(
@@ -41,9 +43,9 @@ export function todayLists(
 	// task 12: recommended first, each group in the common order (a stable sort keeps it)
 	other.sort((a, b) => Number(!!b.recommended) - Number(!!a.recommended));
 	const plannedDone = done.filter((d) => !d.bonus).length;
-	const top = priority(
-		groupPractices(todo, 'goal').map((g, i) => ({
-			id: i,
+	const best = priority(
+		groupPractices(todo, 'goal').map((g) => ({
+			id: g.practices[0].goalId,
 			title: g.title,
 			// the goal's whole history, not only today's unfinished practices
 			n: groupDaysWithout(
@@ -53,8 +55,8 @@ export function todayLists(
 			),
 			doneToday: false
 		}))
-	)?.title;
-	return { todo, done, other, plannedDone, planned, top };
+	);
+	return { todo, done, other, plannedDone, planned, top: best?.title, topGoalId: best?.id };
 }
 
 const DAYS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];

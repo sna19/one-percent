@@ -164,6 +164,8 @@ export function setPlanItem(db: Db, start: DateStr, today: DateStr, practiceId: 
 	checkWeek(start);
 	checkEditable(start, today, date);
 	checkPractice(db, practiceId);
+	// Spec 012 B: a change to a week without a plan makes its draft first (Spec 003), not an empty plan
+	if (!planRow(db, start)) ensureCurrentPlan(db, start, today);
 	const plan = ensureRow(db, start, 'empty');
 	if (planned)
 		db.insert(planItems).values({ weekPlanId: plan.id, practiceId, date }).onConflictDoNothing().run();
@@ -363,4 +365,31 @@ export function copyDayNoteToWeek(db: Db, practiceId: number, date: DateStr, tod
 		}
 	});
 	return targets.length;
+}
+
+/**
+ * Spec 012 B — «Перенести на завтра»: the practice leaves the plan of `from` and is planned on `to`; its day
+ * note moves with it (a note already on `to` is kept). Refused when `from` already has a mark at or above the
+ * minimum: done — nothing to move.
+ */
+export function movePlanItem(db: Db, today: DateStr, practiceId: number, from: DateStr, to: DateStr) {
+	if (!isDateStr(from) || !isDateStr(to)) throw new InputError('Неверная дата');
+	const p = checkPractice(db, practiceId);
+	const done = db
+		.select()
+		.from(entries)
+		.where(and(eq(entries.practiceId, practiceId), eq(entries.date, from)))
+		.get();
+	if (done && done.amount >= p.minDose && done.amount > 0) throw new InputError('Уже сделано — переносить нечего');
+	const src = db.select().from(planItems).where(and(eq(planItems.practiceId, practiceId), eq(planItems.date, from))).get();
+	if (!src) throw new InputError('Этого дня нет в плане');
+	db.transaction((tx) => {
+		const t = tx as unknown as Db;
+		setPlanItem(t, weekStart(to), today, practiceId, to, true);
+		if (src.note) {
+			const dst = t.select().from(planItems).where(and(eq(planItems.practiceId, practiceId), eq(planItems.date, to))).get()!;
+			if (!dst.note) t.update(planItems).set({ note: src.note, noteUpdatedAt: new Date().toISOString() }).where(eq(planItems.id, dst.id)).run();
+		}
+		setPlanItem(t, weekStart(from), today, practiceId, from, false);
+	});
 }

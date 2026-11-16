@@ -34,5 +34,7 @@ export const ICON_NAMES = [
 	'history',
 	'help',
 	'inbox',
-	'flag'
+	'flag',
+	'when',
+	'sliders'
 ] as const;

@@ -271,3 +271,25 @@ describe('pausedWeeks (Spec 010 «Ротация: пауза по плану»)'
 		expect(pausedWeeks(db, [g4], '2026-11-12')[g4]).toEqual([W1]);
 	});
 });
+
+describe('«Когда» (Spec 012 B)', () => {
+	it('moves a planned day to tomorrow with its note; refuses when done; a new week gets its draft first', async () => {
+		const { movePlanItem, setPlanNote } = await import('./plan.js');
+		const db = setup();
+		applySource(db, W1, '2026-11-02', 'empty');
+		setPlanItem(db, W1, '2026-11-02', 1, '2026-11-03', true);
+		setPlanNote(db, 1, '2026-11-03', { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'глава 3' }] }] }, '2026-11-02T10:00:00Z');
+		movePlanItem(db, '2026-11-02', 1, '2026-11-03', '2026-11-04');
+		const p = getPlan(db, W1)!;
+		expect(p.items[1]).toEqual(['2026-11-04']);
+		expect(JSON.stringify(p.notes['1|2026-11-04'])).toContain('глава 3');
+		setEntry(db, 1, '2026-11-04', 15);
+		expect(() => movePlanItem(db, '2026-11-02', 1, '2026-11-04', '2026-11-05')).toThrow('Уже сделано');
+		// Saturday → Sunday of next week: next week had no plan → its draft is made «as last week», then the day added
+		setPlanItem(db, W1, '2026-11-02', 2, '2026-11-07', true);
+		movePlanItem(db, '2026-11-07', 2, '2026-11-07', W2);
+		const next = getPlan(db, W2)!;
+		expect(next.source).toBe('previous');
+		expect(next.items[2]).toContain(W2);
+	});
+});

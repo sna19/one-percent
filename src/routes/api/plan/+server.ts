@@ -7,6 +7,7 @@ import {
 	ensureCurrentPlan,
 	getPlan,
 	getPlanLimit,
+	movePlanItem,
 	listTemplates,
 	pastWeeks,
 	setPlanItem,
@@ -59,6 +60,10 @@ export async function POST({ request }) {
 			case 'item':
 				if (!Number.isInteger(b.practiceId) || typeof b.planned !== 'boolean') error(400, 'bad item');
 				setPlanItem(db, start, today, b.practiceId, String(b.date), b.planned);
+				break;
+			case 'move':
+				if (!Number.isInteger(b.practiceId)) error(400, 'bad move');
+				movePlanItem(db, today, b.practiceId, String(b.date), String(b.to));
 				break;
 			case 'row':
 				if (!Number.isInteger(b.practiceId) || !['daily', 'default', 'clear'].includes(b.mode)) error(400, 'bad row');

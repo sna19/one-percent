@@ -20,6 +20,8 @@
 	import CircleHelp from '@lucide/svelte/icons/circle-help';
 	import InboxIcon from '@lucide/svelte/icons/inbox';
 	import Flag from '@lucide/svelte/icons/flag';
+	import CalendarArrowRight from '@lucide/svelte/icons/calendar-arrow-right';
+	import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
 	import type { Component } from 'svelte';
 	import DayIcon from '../DayIcon.svelte';
 	import { todayStr } from '../dates.js';
@@ -47,7 +49,9 @@
 		history: History,
 		help: CircleHelp,
 		inbox: InboxIcon,
-		flag: Flag
+		flag: Flag,
+		when: CalendarArrowRight,
+		sliders: SlidersHorizontal
 	};
 	const Icon = $derived(MAP[name]);
 </script>

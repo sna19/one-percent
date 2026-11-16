@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import { addDays, todayStr, weekDays, weekStart } from '#lib/dates.js';
 	import { colorOf } from '#lib/palette.js';
 	import { counts, daysWithout, depth, priority } from '#lib/rules.js';
@@ -36,6 +36,9 @@
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Star from '@lucide/svelte/icons/star';
 	import Flag from '@lucide/svelte/icons/flag';
+	import CalendarArrowRight from '@lucide/svelte/icons/calendar-arrow-right';
+	import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
+	import WhenSheet from '#lib/WhenSheet.svelte';
 	import ChartNoAxesColumn from '@lucide/svelte/icons/chart-no-axes-column';
 	import MilestoneCheck from '#lib/milestone/MilestoneCheck.svelte';
 	import { amountLabel, budgetLabel, remaining, todayAdds } from '#lib/milestones.js';
@@ -198,6 +201,8 @@
 	let moreOpen = $state(false);
 	/** task 13: the card whose «±» quantity field is open */
 	let qtyOpen = $state<number | undefined>();
+	/** Spec 012 B: the «Когда» sheet */
+	let whenFor = $state<{ p: PracticeView; day: string } | null>(null);
 
 	/** «3 рекомендовано · 15», or just «15» */
 	function otherCount(other: PracticeView[]) {
@@ -288,8 +293,8 @@
 		priority(
 			groupPractices(practices, 'goal')
 				.filter((g) => !isPlan || g.practices.some((p) => isPlanned(p.id, today)))
-				.map((g, i) => ({
-					id: i,
+				.map((g) => ({
+					id: g.practices[0].goalId,
 					title: g.title,
 					n: groupDaysWithout(g, today, pausedOf),
 					doneToday: g.practices.some((p) => p.lastDone === today)
@@ -514,6 +519,20 @@
 		nav.home = { viewDay, expanded, start, at: Date.now() };
 	});
 
+	// Spec 012 A: links to a day (?day=, Today on that day) and to a week (?start=, from the review)
+	$effect(() => {
+		const d = page.url.searchParams.get('day');
+		const w = page.url.searchParams.get('start');
+		untrack(() => {
+			if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) showDay(d);
+			else if (w && /^\d{4}-\d{2}-\d{2}$/.test(w) && weekStart(w) !== start) {
+				start = weekStart(w);
+				week = undefined;
+				load(start);
+			}
+		});
+	});
+
 	onMount(() => {
 		load().then(() => nav.restore(keyOf(page.url)));
 		const refresh = () => {
@@ -546,9 +565,8 @@
 	{#if tab === 'today'}
 		<TopBar help="today" onAdd={() => capture.show()}
 			title={dayName(viewDay)}
-			subtitle={[dayName(viewDay) !== dayTitle(viewDay) ? dayTitle(viewDay) : '', week && day.planned && !isFutureDay ? `по плану ${day.plannedDone} из ${day.planned}` : '']
-				.filter(Boolean)
-				.join(' · ')}
+			subtitle={dayName(viewDay) !== dayTitle(viewDay) ? dayTitle(viewDay) : ''}
+			subtitleLink={week && day.planned && !isFutureDay ? { text: `по плану ${day.plannedDone} из ${day.planned}`, href: '/?tab=week' } : undefined}
 			below={dayNav}
 			menu={[{ label: 'Изменить план', icon: Pencil, href: `/plan?start=${start}&from=today` }]}
 		>
@@ -636,10 +654,17 @@
 		<div class="grid" style="--cols:{days.length}">
 			<div></div>
 			{#each days as d (d)}
-				<div class="day" class:is-today={d === today}>
-					<span>{DAY_NAMES[new Date(d + 'T12:00').getDay()]}</span>
-					<b>{Number(d.slice(8))}</b>
-				</div>
+				{#if d >= minDay && d <= maxDay}
+					<a class="day obj" class:is-today={d === today} href="/?day={d}" aria-label="Открыть {dayTitle(d)} на «Сегодня»">
+						<span>{DAY_NAMES[new Date(d + 'T12:00').getDay()]}</span>
+						<b>{Number(d.slice(8))}</b>
+					</a>
+				{:else}
+					<div class="day" class:is-today={d === today}>
+						<span>{DAY_NAMES[new Date(d + 'T12:00').getDay()]}</span>
+						<b>{Number(d.slice(8))}</b>
+					</div>
+				{/if}
 			{/each}
 
 			{#each groups as g (g.key)}
@@ -649,13 +674,14 @@
 				{:else}
 					{@const isOpen = open.includes(g.key)}
 					{@const n = groupDaysWithout(g, today, pausedOf)}
-					<button class="name group" onclick={() => toggle(g.key)} aria-expanded={isOpen}>
-						<svg class="chev" class:open={isOpen} viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 1.5 7 5 3.5 8.5" /></svg>
-						<span class="gtext">
-							<span>{g.title} <span class="count">{g.practices.length}</span></span>
-							{@render goalSmall(lens !== 'format' ? g.practices[0].goalId : null, n >= 2 ? without(n) : '')}
-						</span>
-					</button>
+					<div class="name gwrap">
+						<button class="name group" onclick={() => toggle(g.key)} aria-expanded={isOpen}>
+							<svg class="chev" class:open={isOpen} viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 1.5 7 5 3.5 8.5" /></svg>
+							<span class="gtext"><span>{g.title} <span class="count">{g.practices.length}</span></span></span>
+						</button>
+						<!-- Spec 012 A: the name folds (its role); the line under it is the goal's link -->
+						{@render goalSmall(lens !== 'format' ? g.practices[0].goalId : null, n >= 2 ? without(n) : '')}
+					</div>
 					{#each days as d (d)}
 						{@const c = groupCell(g, d, amountOf)}
 						{@const planned = g.practices.some((p) => isPlanned(p.id, d))}
@@ -697,12 +723,23 @@
 		{/if}
 
 		{#if top && isCurrentWeek}
-			<p class="priority">Сегодня в приоритете: <b>{top.title}</b></p>
+			<p class="priority">Сегодня в приоритете: <a class="obj" href="/settings/goal/{top.id}?from={tab}"><b>{top.title}</b></a></p>
 		{/if}
 		{/if}
 	{/if}
 </main>
 <QuickCapture bind:this={capture} />
+{#if whenFor}
+	<WhenSheet
+		p={whenFor.p}
+		day={whenFor.day}
+		{today}
+		amount={amountOf(whenFor.p.id, whenFor.day)}
+		from={tab}
+		onClose={() => (whenFor = null)}
+		onChanged={() => load()}
+	/>
+{/if}
 {#if flash}
 	<div class="flash-wrap" aria-live="polite"><a class="flash" href="/settings/goal/{flash.goalId}?from={tab}">{flash.text}</a></div>
 {/if}
@@ -757,7 +794,7 @@
 	{#if day.planned}
 		{#if viewDay === today}
 			<p class="priority today-top">
-				{#if day.top}В приоритете: <b>{day.top}</b>{:else}План на сегодня выполнен{/if}
+				{#if day.top}В приоритете: <a class="obj" href="/settings/goal/{day.topGoalId}?from={tab}"><b>{day.top}</b></a>{:else}План на сегодня выполнен{/if}
 			</p>
 		{:else if isFutureDay}
 			<p class="day-hint">Отмечать можно, когда день наступит. Заметку дня можно писать уже сейчас.</p>
@@ -945,6 +982,11 @@
 								onclick={() => openSheet(p, viewDay, 'day')}><DayIcon day={Number(viewDay.slice(8))} /></button
 							>
 						{/if}
+						<button
+							aria-label="Когда: {p.title}"
+							title="Когда"
+							onclick={() => (whenFor = { p, day: viewDay })}><CalendarArrowRight size={22} /></button
+						>
 						{@render star(p)}
 						<a
 							class="flag-btn"
@@ -952,6 +994,12 @@
 							href="/settings/goal/{p.goalId}?from={tab}"
 							aria-label="Цель «{p.goalTitle}»: майлстон и прогресс"
 							title="Майлстон"><Flag size={22} /></a
+						>
+						<a
+							class="flag-btn"
+							href="/settings/practice/{p.id}?from={tab}"
+							aria-label="Настройки практики «{p.title}»"
+							title="Настройки практики"><SlidersHorizontal size={22} /></a
 						>
 						{#if !auto && !isFutureDay}
 							<button
@@ -984,8 +1032,12 @@
 {#snippet goalSmall(goalId: number | null, text: string)}
 	<!-- Spec 009 B: the same milestone line in goal headings of «Неделя» and «Всё» -->
 	{@const m = goalId === null ? undefined : week?.milestones?.[goalId]}
-	{#if text || m}
-		<small class="gsmall">{text}{#if m}{#if text}<span> · </span>{/if}<Flag size={10} />{remaining(m.dueDate, today) || 'без срока'}{/if}</small>
+	{#if goalId !== null && (text || m)}
+		<a class="obj gsmall" href="/settings/goal/{goalId}?from={tab}"
+			>{text}{#if m}{#if text}<span> · </span>{/if}<Flag size={10} />{remaining(m.dueDate, today) || 'без срока'}{/if}</a
+		>
+	{:else if text}
+		<small class="gsmall">{text}</small>
 	{/if}
 {/snippet}
 
@@ -1020,10 +1072,11 @@
 
 {#snippet practiceRow(p: PracticeView, title: string, sub: string, indent: boolean)}
 	{@const n = nOf(p)}
-	<button class="name pname" class:indent onclick={() => openSheet(p, today)} aria-label="{p.title}: доза и заметка">
-		<span>{title}</span>
+	<!-- Spec 012 A: a practice's name opens its screen; dose and note — a long press on a cell -->
+	<div class="name prow" class:indent>
+		<a class="obj pname" href="/settings/practice/{p.id}?from={tab}">{title}</a>
 		{@render goalSmall(lens !== 'format' && !indent ? p.goalId : null, [sub, n >= 2 ? without(n) : ''].filter(Boolean).join(' · '))}
-	</button>
+	</div>
 	{#each days as d (d)}
 		{@const a = amountOf(p.id, d)}
 		{@const planned = isPlanned(p.id, d)}
@@ -1189,9 +1242,33 @@
 		flex-direction: column;
 		min-width: 0;
 	}
-	.gtext small {
+	.gwrap {
+		min-width: 0;
+	}
+	.gwrap button.name.group {
+		min-height: 30px;
+	}
+	.gwrap .gsmall,
+	.prow .gsmall {
 		color: var(--muted);
 		font-size: 12px;
+	}
+	.gwrap .gsmall {
+		padding-left: 14px;
+	}
+	.prow {
+		min-height: 44px;
+		justify-content: center;
+		min-width: 0;
+	}
+	.prow .pname {
+		color: var(--text);
+		min-height: 24px;
+		display: flex;
+		align-items: center;
+	}
+	a.day {
+		text-decoration: none;
 	}
 	.chev {
 		flex: none;
@@ -1496,9 +1573,10 @@
 		color: inherit;
 		text-decoration: none;
 		white-space: nowrap;
-		/* #18: a 44 pt tall touch area without making the card taller */
-		padding: 14px 8px 14px 0;
-		margin: -14px -8px -14px 0;
+		/* #18: a taller touch area that grows only downwards, into the card's own padding: upwards it
+		   would cover the title, whose tap opens the card */
+		padding: 2px 8px 12px 0;
+		margin: -2px -8px -12px 0;
 		position: relative;
 		z-index: 1;
 	}
@@ -1776,18 +1854,6 @@
 	}
 	.cline :global(ul) {
 		margin: 0;
-	}
-	button.pname {
-		background: none;
-		border: none;
-		padding: 0;
-		text-align: left;
-		font: inherit;
-		font-size: 14px;
-		color: var(--text);
-		cursor: pointer;
-		min-height: 36px;
-		justify-content: center;
 	}
 	.weeknav {
 		display: flex;

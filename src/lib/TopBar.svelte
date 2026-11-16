@@ -25,6 +25,8 @@
 		title: string;
 		/** small line under the large title */
 		subtitle?: string;
+		/** Spec 012 A: a part of the small line that is an object's link, e.g. «по плану 2 из 5» → «Неделя» */
+		subtitleLink?: { text: string; href: string };
 		back?: { label: string; href: string };
 		/** up to two icon buttons (use IconButton) */
 		actions?: Snippet;
@@ -36,7 +38,7 @@
 		/** Spec 008: «+» quick capture into the inbox, on the root screens (left side, free there) */
 		onAdd?: () => void;
 	}
-	let { title, subtitle, back, actions, menu = [], below, help, onAdd }: Props = $props();
+	let { title, subtitle, subtitleLink, back, actions, menu = [], below, help, onAdd }: Props = $props();
 
 	let helpOpen = $state(false);
 	const openHelp = () => {
@@ -102,7 +104,9 @@
 </div>
 <div class="large">
 	<h1>{title}{#if help}{@render helpBtn(20, compact)}{/if}</h1>
-	{#if subtitle}<p>{subtitle}</p>{/if}
+	{#if subtitle || subtitleLink}
+		<p>{subtitle ?? ''}{#if subtitleLink}{subtitle ? ' · ' : ''}<a class="obj" href={subtitleLink.href}>{subtitleLink.text}</a>{/if}</p>
+	{/if}
 </div>
 {@render below?.()}
 {#if helpOpen && help}<HelpSheet topic={help} onClose={() => (helpOpen = false)} />{/if}

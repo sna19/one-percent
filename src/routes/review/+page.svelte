@@ -102,6 +102,7 @@
 		<select class="pick" aria-label="Неделя" value={r.start} onchange={(e) => load(e.currentTarget.value)}>
 			{#each r.weeks.filter((w) => w < weekStart(today) || w === r?.start) as w (w)}<option value={w}>{label(w)} – {label(addDays(w, 6))}</option>{/each}
 		</select>
+		<a class="obj weeklink" href="/?tab=week&start={r.start}">в «Неделе» →</a>
 	{/if}
 
 	{#if error}<p class="note" role="alert">{error}</p>{/if}
@@ -178,7 +179,7 @@
 				</div>
 				{#each r.plan.categories.filter((c) => openCats.includes(c.id)) as c (c.id)}
 					<ul class="rows sub">
-						{#each c.goals as g (g.goalId)}<li><span>{g.title}</span><span class="meta">{g.plannedDone} из {g.planned}</span></li>{/each}
+						{#each c.goals as g (g.goalId)}<li><a class="obj" href="/settings/goal/{g.goalId}?from=week">{g.title}</a><span class="meta">{g.plannedDone} из {g.planned}</span></li>{/each}
 					</ul>
 				{/each}
 			</section>
@@ -203,10 +204,11 @@
 				<p class="lead">{realism}</p>
 				<div class="days" role="img" aria-label="Выполнение плана по дням">
 					{#each r.days as d (d.date)}
-						<div class="day" class:weak={r.weakDays.includes(d.date)}>
+						{@const linked = d.date >= weekStart(today) && d.date <= addDays(weekStart(today), 13)}
+						<svelte:element this={linked ? 'a' : 'div'} class="day obj" class:weak={r.weakDays.includes(d.date)} href={linked ? `/?day=${d.date}` : undefined}>
 							<span class="col"><span style="height:{d.planned ? pct(d.done, d.planned) : 0}%"></span></span>
 							<small>{dayName(d.date)}</small>
-						</div>
+						</svelte:element>
 					{/each}
 				</div>
 			</section>
@@ -237,7 +239,7 @@
 			<button class="fold" aria-expanded={showPaused} onclick={() => (showPaused = !showPaused)}>На паузе по плану: {goalsWord(r.paused.length)}</button>
 			{#if showPaused}
 				<ul class="rows sub">
-					{#each r.paused as g (g.goalId)}<li><span>{g.title}</span><span class="meta">{g.supported ? 'поддержал на паузе' : ''}</span></li>{/each}
+					{#each r.paused as g (g.goalId)}<li><a class="obj" href="/settings/goal/{g.goalId}?from=week">{g.title}</a><span class="meta">{g.supported ? 'поддержал на паузе' : ''}</span></li>{/each}
 				</ul>
 			{/if}
 		{/if}
@@ -286,6 +288,11 @@
 	}
 	.soft a {
 		color: var(--link);
+	}
+	.weeklink {
+		margin-left: 10px;
+		font-size: 14px;
+		color: var(--muted);
 	}
 	.pick {
 		margin: -6px 0 10px;
