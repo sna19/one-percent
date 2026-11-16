@@ -131,11 +131,23 @@
 	);
 	const isPlanned = (pid: number, d: string) => plannedSet.has(`${pid}|${d}`);
 	const isPlan = $derived(lens === 'plan');
+	// #25: on «Всё» by goals the rows follow the navigator — categories, then goals in the settings order — and
+	// can be searched
+	let allQuery = $state('');
+	const nq = (x: string) => x.toLocaleLowerCase('ru').replace(/ё/g, 'е');
+	const allPractices = $derived.by(() => {
+		const q = nq(allQuery.trim());
+		const ps = q ? practices.filter((p) => [p.title, p.goalTitle, p.categoryName, p.formatName ?? ''].some((t) => nq(t).includes(q))) : practices;
+		return lens === 'goal' ? [...ps].sort((a, b) => a.categoryOrder - b.categoryOrder || a.categoryId - b.categoryId || a.goalOrder - b.goalOrder || a.goalId - b.goalId) : ps;
+	});
 	const groups = $derived(
 		isPlan
 			? groupPractices(planPractices(practices, days, isPlanned, amountOf), 'goal')
-			: groupPractices(practices, lens as Lens)
+			: groupPractices(allPractices, lens as Lens)
 	);
+	/** the category heading goes before the first goal of each category (goal lens on «Всё») */
+	const catStart = (i: number) =>
+		!isPlan && lens === 'goal' && (i === 0 || groups[i - 1].practices[0].categoryId !== groups[i].practices[0].categoryId);
 	const summary = $derived(planWeekSummary(practices, days, isPlanned, amountOf));
 	/** Spec 007 E: Today pages by day — this week and next. */
 	let viewDay = $state(todayStr());
@@ -674,6 +686,7 @@
 			{/snippet}
 		</TopBar>
 		<p class="lens-label">{allLens === 'goal' ? 'По целям' : 'По форматам'}</p>
+		<input class="all-search" type="search" bind:value={allQuery} placeholder="Найти практику, цель, категорию" aria-label="Поиск" />
 	{:else}
 		<TopBar help="inbox" title="Входящие" subtitle={inbox.count ? `неразобранных: ${inbox.count}` : ''} onAdd={() => capture.show()} />
 	{/if}
@@ -729,7 +742,11 @@
 				{/if}
 			{/each}
 
-			{#each groups as g (g.key)}
+			{#each groups as g, i (g.key)}
+				{#if catStart(i)}
+					{@const p0 = g.practices[0]}
+					<div class="cathead"><span class="cdot" style="--c:{colorOf(p0.color).light}"></span>{p0.categoryName}</div>
+				{/if}
 				{#if g.practices.length === 1}
 					{@const p = g.practices[0]}
 					{@render practiceRow(p, g.title, p.title !== g.title ? p.title : '', false)}
@@ -891,11 +908,8 @@
 	{#if isFutureDay && day.other.length}
 		<details class="more" open={!day.planned}>
 			<summary>Добавить в план этого дня <span class="count">{day.other.length}</span></summary>
-			<ul class="addlist">
-				{#each day.other as p (p.id)}
-					<li><button onclick={() => setPlanned(p, true)}>+ {p.title}{#if p.goalTitle !== p.title}<small>{p.goalTitle}</small>{/if}</button></li>
-				{/each}
-			</ul>
+			<!-- #25: the same navigator, «pick one»: a tap plans the practice on this day -->
+			<PracticeTree tree={treeOfPractices(day.other)} storageKey="today-add-tree" mode="one" search={day.other.length > 6} onPick={(p) => setPlanned(p, true)} />
 		</details>
 	{:else if day.other.length}
 		<details class="more" open={moreOpen || !day.planned} ontoggle={(e) => (moreOpen = (e.currentTarget as HTMLDetailsElement).open)}>
@@ -1350,6 +1364,37 @@
 		flex-direction: column;
 		min-width: 0;
 	}
+	.cathead {
+		grid-column: 1 / -1;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-top: 10px;
+		font-size: 12px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--muted);
+	}
+	.cdot {
+		width: 10px;
+		height: 10px;
+		border-radius: 3px;
+		background: var(--c);
+	}
+	.all-search {
+		width: 100%;
+		box-sizing: border-box;
+		min-height: 40px;
+		margin: 0 0 8px;
+		padding: 0 12px;
+		border: none;
+		border-radius: 10px;
+		background: var(--surface);
+		color: var(--text);
+		font: inherit;
+		font-size: 16px;
+	}
 	.gimg {
 		display: inline-flex;
 		margin-right: 5px;
@@ -1498,33 +1543,6 @@
 		color: var(--muted);
 		font-size: 14px;
 		margin: 0 0 8px;
-	}
-	.addlist {
-		list-style: none;
-		margin: 6px 0 0;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-	}
-	.addlist button {
-		width: 100%;
-		min-height: 48px;
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		padding: 0 14px;
-		border: 1px dashed var(--line);
-		border-radius: 12px;
-		background: none;
-		color: var(--text);
-		font: inherit;
-		text-align: left;
-		cursor: pointer;
-	}
-	.addlist small {
-		color: var(--muted);
-		margin-left: auto;
 	}
 	.today-top {
 		margin-top: 0;

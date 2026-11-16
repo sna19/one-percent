@@ -1,4 +1,6 @@
 <script lang="ts">
+	import PracticeTree from '#lib/PracticeTree.svelte';
+	import { treeOfPractices } from '#lib/tree.js';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { addDays, isDateStr, todayStr, weekDays, weekStart } from '#lib/dates.js';
@@ -233,6 +235,26 @@
 	};
 	const row = (p: PracticeView, mode: 'daily' | 'default' | 'clear') => call({ action: 'row', practiceId: p.id, mode });
 
+	// #25: «Выбрать практики» — the navigator in «pick many» mode: picked ones get their usual days (or every day),
+	// unpicked ones leave the plan from today on
+	let choosing = $state(false);
+	let chosen = $state<number[]>([]);
+	const inPlanIds = $derived((data?.practices ?? []).filter((p) => (data?.plan?.items[p.id] ?? []).length).map((p) => p.id));
+	function openChoose() {
+		chosen = [...inPlanIds];
+		choosing = true;
+	}
+	async function applyChoose() {
+		choosing = false;
+		for (const p of data?.practices ?? []) {
+			const was = inPlanIds.includes(p.id);
+			const now = chosen.includes(p.id);
+			if (now && !was) await row(p, p.defaultDays.length ? 'default' : 'daily');
+			else if (!now && was) await row(p, 'clear');
+		}
+	}
+	const chooseTree = $derived(treeOfPractices(data?.practices ?? []));
+
 	async function confirm() {
 		if (saveTemplate && saveMode !== 'new') {
 			const t = data?.templates.find((x) => x.id === saveMode);
@@ -330,6 +352,7 @@
 
 		<section>
 			<h2>2. Редактор</h2>
+			<button class="choose" disabled={busy} onclick={openChoose}>Выбрать практики · {inPlanIds.length}</button>
 			<p class="muted small">
 				В плане {practiceCount} практик, {sessionCount} занятий. Тап по клетке включает и выключает день.
 			</p>
@@ -440,6 +463,17 @@
 	</div>
 {/if}
 
+{#if choosing}
+	<div class="backdrop" role="presentation" onclick={() => (choosing = false)}></div>
+	<div class="menu choose-sheet" role="dialog" aria-label="Практики в плане">
+		<div class="manage-head"><p>Практики в плане</p><button class="quiet small" onclick={applyChoose}>Готово</button></div>
+		<p class="muted small">Новые встанут на свои обычные дни (без них — на каждый день); снятые уйдут из плана с сегодняшнего дня.</p>
+		<div class="choose-body">
+			<PracticeTree tree={chooseTree} storageKey="plan-choose-tree" mode="many" bind:selected={chosen} />
+		</div>
+	</div>
+{/if}
+
 {#if menu}
 	{@const m = menu}
 	<div class="backdrop" role="presentation" onclick={() => (menu = undefined)}></div>
@@ -476,6 +510,25 @@
 {/if}
 
 <style>
+	.choose {
+		min-height: 40px;
+		margin: 0 0 8px;
+		padding: 0 14px;
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		background: var(--surface);
+		color: var(--text);
+		font: inherit;
+		cursor: pointer;
+	}
+	.choose-sheet {
+		max-height: 80vh;
+		display: flex;
+		flex-direction: column;
+	}
+	.choose-body {
+		overflow-y: auto;
+	}
 	.name.hl {
 		border-radius: 8px;
 		background: color-mix(in oklab, var(--text) 12%, transparent);
