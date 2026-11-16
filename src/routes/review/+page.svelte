@@ -259,6 +259,14 @@
 			</section>
 		{/if}
 
+		{#if r.staleStep}
+			{@const w = r.staleStep.weeks}
+			<!-- #28: one quiet line, no «overdue» -->
+			<p class="soft">
+				Шаг «{r.staleStep.title}» висит {w} {w % 10 === 1 && w % 100 !== 11 ? 'неделю' : [2, 3, 4].includes(w % 10) && ![12, 13, 14].includes(w % 100) ? 'недели' : 'недель'} — сделать, разбить или убрать?
+				<a href="/settings/goal/{r.staleStep.goalId}?from=week">{r.staleStep.goalTitle}</a>
+			</p>
+		{/if}
 		{#if r.normal.length}
 			<button class="fold" aria-expanded={showNormal} onclick={() => (showNormal = !showNormal)}>В норме: {goalsWord(r.normal.length)}</button>
 			{#if showNormal}

@@ -3,6 +3,7 @@
 	import FilePen from '@lucide/svelte/icons/file-pen';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Target from '@lucide/svelte/icons/target';
+	import ListChecks from '@lucide/svelte/icons/list-checks';
 	import Check from '@lucide/svelte/icons/check';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
@@ -31,7 +32,7 @@
 	}
 	let { item, practices, today, onClose, onChanged }: Props = $props();
 
-	type Step = 'menu' | 'practice' | 'day' | 'goal' | 'category';
+	type Step = 'menu' | 'practice' | 'day' | 'goal' | 'category' | 'step';
 	let step = $state<Step>('menu');
 	// svelte-ignore state_referenced_locally
 	let day = $state<DateStr>(today);
@@ -112,7 +113,8 @@
 		practice: 'В заметку практики',
 		day: 'В заметку дня',
 		goal: 'Новая практика: цель',
-		category: 'Новая цель: категория'
+		category: 'Новая цель: категория',
+		step: 'Шаг цели'
 	};
 </script>
 
@@ -167,6 +169,7 @@
 					<li><button disabled={busy} onclick={() => (step = 'practice')}><FilePen size={20} />В заметку практики</button></li>
 					<li><button disabled={busy} onclick={() => (step = 'day')}><DayIcon day={Number(today.slice(8))} size={20} />В заметку дня</button></li>
 					<li><button disabled={busy} onclick={() => (step = 'goal')}><Plus size={20} />Новая практика</button></li>
+					<li><button disabled={busy} onclick={() => (step = 'step')}><ListChecks size={20} />Шаг цели</button></li>
 					<li><button disabled={busy} onclick={() => (step = 'category')}><Target size={20} />Новая цель</button></li>
 					<li><button disabled={busy} onclick={() => close2('done')}><Check size={20} />Сделано</button></li>
 				{/if}
@@ -191,6 +194,9 @@
 				<p class="muted">На этот день ничего не запланировано: выбранная практика добавится в план.</p>
 			{/if}
 			{@render practiceTree(toDay, true)}
+		{:else if step === 'step'}
+			<p class="muted">Одноразовая задача цели: название — первая строка записи, остальное — заметка шага.</p>
+			<PracticeTree tree={goalTree} storageKey="inbox-step-tree" mode="goal" onPickGoal={(g) => !busy && run({ action: 'step', goalId: g.id }, `Шаг цели: ${g.title}`)} />
 		{:else if step === 'goal'}
 			<p class="muted">Название — первая строка записи, остальное — в заметку «Всегда».</p>
 			<PracticeTree tree={goalTree} storageKey="inbox-goal-tree" mode="goal" onPickGoal={(g) => !busy && newPractice(g.id)} />

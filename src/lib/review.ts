@@ -77,6 +77,8 @@ export interface WeeklyReview {
 	paused: { goalId: number; title: string; supported: boolean }[];
 	overload: { activeGoals: number } | null;
 	retroText: string;
+	/** #28: the oldest open step hanging two weeks or more — one line: do it, split it or drop it */
+	staleStep: { goalId: number; goalTitle: string; title: string; weeks: number } | null;
 	/** no plan this week at all — the screen says so instead of the blocks */
 	noPlan: boolean;
 }

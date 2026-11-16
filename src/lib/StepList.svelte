@@ -94,7 +94,7 @@
 		>
 			{#each list as s (s.id)}
 				<li data-id={s.id}>
-					<input type="checkbox" aria-label="Сделано: {s.title}" onchange={() => check(s)} />
+					<input type="checkbox" aria-label="Сделано: {s.title}" onchange={(e) => { e.currentTarget.checked = false; check(s); }} />
 					<button class="title" onclick={() => (editing = { ...s })}>
 						<span>{s.title}</span>
 						{#if s.practiceId || s.plannedDate || age(s) >= STEP_STALE_DAYS}

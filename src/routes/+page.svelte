@@ -42,6 +42,7 @@
 	import CalendarArrowRight from '@lucide/svelte/icons/calendar-arrow-right';
 	import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
 	import WhenSheet from '#lib/WhenSheet.svelte';
+	import { STEPS_ON_TODAY, type StepView } from '#lib/steps.js';
 	import GoalImage from '#lib/GoalImage.svelte';
 	import ChartNoAxesColumn from '@lucide/svelte/icons/chart-no-axes-column';
 	import MilestoneCheck from '#lib/milestone/MilestoneCheck.svelte';
@@ -240,6 +241,45 @@
 	function otherCount(other: PracticeView[]) {
 		const rec = other.filter((x) => x.recommended).length;
 		return rec ? `${rec} рекомендовано · ${other.length}` : String(other.length);
+	}
+
+	// #28: steps — one-off tasks of a goal; a practice's step is its precondition («сначала»)
+	let stepsShowAll = $state(false);
+	const openStepsList = $derived(week?.steps ?? []);
+	const stepsOfPractice = (pid: number) => openStepsList.filter((s) => s.practiceId === pid);
+	const stepOf = (p: PracticeView) => stepsOfPractice(p.id)[0];
+	const goalStepsToday = $derived(
+		openStepsList.filter((s) => s.practiceId === null && (!!week?.plan?.focus?.includes(s.goalId) || (!!s.plannedDate && s.plannedDate <= viewDay)))
+	);
+	async function stepCall(body: Record<string, unknown>) {
+		const r = await fetch('/api/steps', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => undefined);
+		if (!r?.ok) {
+			problem = (await r?.json().catch(() => null))?.message ?? 'Нет связи с сервером';
+			return null;
+		}
+		return r.json();
+	}
+	async function stepDone(st: StepView) {
+		if (week?.steps) week.steps = week.steps.filter((x) => x.id !== st.id);
+		if (!(await stepCall({ action: 'done', id: st.id }))) return load();
+		const where = st.practiceId ? (practices.find((x) => x.id === st.practiceId)?.title ?? st.goalTitle) : st.goalTitle;
+		flash = {
+			text: `Шаг сделан → ${where}`,
+			goalId: st.goalId,
+			undo: async () => {
+				await stepCall({ action: 'undone', id: st.id });
+				await load();
+			}
+		};
+		clearTimeout(flashTimer);
+		flashTimer = setTimeout(() => (flash = null), 5000);
+	}
+	async function addStep(p: PracticeView, f: HTMLFormElement) {
+		const input = f.elements.namedItem('step') as HTMLInputElement;
+		const title = input.value.trim();
+		if (!title) return;
+		input.value = '';
+		if (await stepCall({ action: 'create', goalId: p.goalId, practiceId: p.id, title })) await load();
 	}
 
 	// #27: the link icon — the practice's note links go to the «Ссылки» tab
@@ -448,7 +488,7 @@
 	}
 
 	// Spec 009 C: a short flash after a mark — what it added to the goal's milestone; a tap opens the goal
-	let flash = $state<{ text: string; goalId: number } | null>(null);
+	let flash = $state<{ text: string; goalId: number; undo?: () => void } | null>(null);
 	let flashTimer: ReturnType<typeof setTimeout> | undefined;
 	function milestoneFlash(p: PracticeView, old: number, amount: number, before: number) {
 		const m = week?.milestones?.[p.goalId];
@@ -871,7 +911,17 @@
 	/>
 {/if}
 {#if flash}
-	<div class="flash-wrap" aria-live="polite"><a class="flash" href="/settings/goal/{flash.goalId}?from={tab}">{flash.text}</a></div>
+	<div class="flash-wrap" aria-live="polite">
+		<span class="flash"
+			><a class="obj" href="/settings/goal/{flash.goalId}?from={tab}">{flash.text}</a>{#if flash.undo}<button
+					class="undo"
+					onclick={() => {
+						flash?.undo?.();
+						flash = null;
+					}}>Вернуть</button
+				>{/if}</span
+		>
+	</div>
 {/if}
 
 {#snippet dayNav()}
@@ -915,6 +965,22 @@
 {/if}
 
 {#snippet todayScreen()}
+	{#if viewDay >= today && goalStepsToday.length}
+		<!-- #28: steps of goals in focus, or with their day come — at most three, the rest behind «ещё N» -->
+		<section class="steps-today">
+			<h2 class="zone">Шаги</h2>
+			<ul>
+				{#each stepsShowAll ? goalStepsToday : goalStepsToday.slice(0, STEPS_ON_TODAY) as st (st.id)}
+					<li>
+						<input type="checkbox" aria-label="Шаг сделан: {st.title}" onchange={(e) => { e.currentTarget.checked = false; stepDone(st); }} />
+						<span class="sttl">{st.title}</span>
+						<a class="obj sgoal" href="/settings/goal/{st.goalId}?from={tab}">{st.goalTitle}</a>
+					</li>
+				{/each}
+			</ul>
+			{#if !stepsShowAll && goalStepsToday.length > STEPS_ON_TODAY}<button class="more-btn2" onclick={() => (stepsShowAll = true)}>ещё {goalStepsToday.length - STEPS_ON_TODAY}</button>{/if}
+		</section>
+	{/if}
 	{#if viewDay === today && dueCheck}
 		<!-- Spec 009 E: one milestone at a time whose date has come -->
 		{#key dueCheck.id}
@@ -1028,7 +1094,7 @@
 			onclick={(e) => {
 				// a link (goal line, flag) and the opened part handle their own taps; links must reach the
 				// router, so they are not stopped — a stopped click becomes a full page load (#21)
-				if ((e.target as Element).closest('a, .cexpand')) return;
+				if ((e.target as Element).closest('a, .cexpand, .cstep')) return;
 				toggleCard(p.id);
 			}}
 		>
@@ -1062,6 +1128,16 @@
 			<span class="dose" class:count={auto}
 				>{auto ? `${st.checked} из ${st.total}` : a && !counts(a, p) ? `${a} из ${p.normDose} ${p.unit}` : a ? `${a} ${p.unit}` : volCaption(p) || doseHint(p)}</span
 			>
+			{#if planned && stepOf(p)}
+				{@const st0 = stepOf(p)!}
+				{@const more = stepsOfPractice(p.id).length - 1}
+				<!-- #28: a step of this practice — a precondition, first line on the card; it does not block the mark -->
+				<div class="cstep">
+					<input type="checkbox" aria-label="Шаг сделан: {st0.title}" onchange={(e) => { e.currentTarget.checked = false; stepDone(st0); }} />
+					<span class="first">сначала</span><span class="sttl">{st0.title}</span>
+					{#if more > 0}<a class="obj more-steps" href="/settings/goal/{p.goalId}?from={tab}">и ещё {more}</a>{/if}
+				</div>
+			{/if}
 			{#if first}
 				<!-- task 13: the note's first block, whole and formatted; links work, the rest of a tap opens the card -->
 				<div class="cnote cline"><NoteView doc={first} preview /></div>
@@ -1084,6 +1160,9 @@
 							<button onclick={() => mark(p, viewDay, p.normDose)}>Норма · {p.normDose}</button>
 						</div>
 						{#if week?.volumes?.[p.id]}{@render volumeRow(p)}{/if}
+						<form class="vol-form" onsubmit={(e) => { e.preventDefault(); addStep(p, e.currentTarget); }}>
+							<input name="step" placeholder="+ Шаг для «{p.title}»" aria-label="Новый шаг практики" />
+						</form>
 						{#if qtyOpen === p.id}
 							<form
 								class="qty"
@@ -1743,6 +1822,92 @@
 		background: var(--surface);
 		color: var(--text);
 		text-decoration: none;
+	}
+	.cstep {
+		grid-column: 1 / -1;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-top: 6px;
+		font-size: 14px;
+	}
+	.cstep input,
+	.steps-today input {
+		flex: none;
+		width: 20px;
+		height: 20px;
+		margin: 0;
+		accent-color: var(--text);
+	}
+	.cstep .first {
+		flex: none;
+		padding: 0 6px;
+		border: 1px solid currentColor;
+		border-radius: 999px;
+		font-size: 11px;
+		opacity: 0.75;
+	}
+	.cstep .sttl,
+	.steps-today .sttl {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.more-steps {
+		flex: none;
+		font-size: 12px;
+		opacity: 0.75;
+	}
+	.steps-today {
+		margin: 0 0 10px;
+	}
+	.steps-today ul {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		border-radius: 12px;
+		background: var(--surface);
+	}
+	.steps-today li {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		min-height: 44px;
+		padding: 0 12px;
+	}
+	.steps-today li + li {
+		border-top: 1px solid var(--line);
+	}
+	.sgoal {
+		flex: none;
+		max-width: 40%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 12px;
+		color: var(--muted);
+	}
+	.more-btn2 {
+		min-height: 36px;
+		border: none;
+		background: none;
+		color: var(--muted);
+		font: inherit;
+		font-size: 14px;
+		cursor: pointer;
+	}
+	.flash .undo {
+		margin-left: 12px;
+		padding: 0;
+		border: none;
+		background: none;
+		color: inherit;
+		font: inherit;
+		font-weight: 700;
+		text-decoration: underline;
+		cursor: pointer;
 	}
 	.due-card {
 		margin: 4px 0 12px;

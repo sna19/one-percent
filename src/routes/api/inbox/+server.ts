@@ -11,7 +11,8 @@ import {
 	toDayNote,
 	toNewGoal,
 	toNewPractice,
-	toPracticeNote
+	toPracticeNote,
+	toStep
 } from '#lib/server/inbox.js';
 import { categories, goals, planItems } from '#lib/server/schema.js';
 import { InputError } from '#lib/server/settings.js';
@@ -78,6 +79,8 @@ export async function POST({ request }) {
 				break;
 			case 'newPractice':
 				return json({ ok: true, practiceId: toNewPractice(db, int(b.id), int(b.goalId)) });
+			case 'step':
+				return json({ ok: true, stepId: toStep(db, int(b.id), int(b.goalId)) });
 			case 'newGoal':
 				return json({ ok: true, goalId: toNewGoal(db, int(b.id), int(b.categoryId)) });
 			default:

@@ -8,6 +8,7 @@ import { InputError, createGoal, createPractice } from './settings.js';
 import { setPlanItem } from './plan.js';
 import { plainToDoc } from '../inbox.js';
 import { dayTitle } from '../today.js';
+import { createStep } from './steps.js';
 
 /** Spec 008 — «Входящие»: write in one touch, sort later. */
 
@@ -170,6 +171,21 @@ export function toNewGoal(db: Db, id: number, categoryId: number): number {
 		close(t, id, 'processed', `Новая цель: ${title.slice(0, 200)}`);
 	});
 	return gid;
+}
+
+/** #28 «Шаг цели»: title = first paragraph, the rest is the step's note. Returns the step. */
+export function toStep(db: Db, id: number, goalId: number): number {
+	const r = item(db, id);
+	const { title, rest } = splitTitle(JSON.parse(r.text));
+	const g = db.select().from(goals).where(eq(goals.id, goalId)).get();
+	if (!g) throw new InputError('Цель не найдена');
+	let sid = 0;
+	db.transaction((tx) => {
+		const t = tx as unknown as Db;
+		sid = createStep(t, { goalId, title: title.slice(0, 300), note: rest ? plainToDoc(rest) : null });
+		close(t, id, 'processed', `Шаг цели: ${g.title}`);
+	});
+	return sid;
 }
 
 /** Days offered for «В заметку дня»: today up to the end of the last planned week (at least next week). */

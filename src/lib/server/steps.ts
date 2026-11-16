@@ -113,14 +113,10 @@ export function updateStep(db: Db, id: number, b: Record<string, unknown>) {
 	db.update(steps).set(set).where(eq(steps.id, id)).run();
 }
 
-/** Done — or back («Вернуть»): it returns to the end of its goal's list. */
+/** Done — or back («Вернуть»): it returns to the place it had. */
 export function setStepDone(db: Db, id: number, done: boolean) {
-	const s = get(db, id);
-	if (done) db.update(steps).set({ doneAt: new Date().toISOString() }).where(eq(steps.id, id)).run();
-	else {
-		const last = db.select({ m: max(steps.sortOrder) }).from(steps).where(eq(steps.goalId, s.goalId)).get()?.m ?? 0;
-		db.update(steps).set({ doneAt: null, sortOrder: last + 1 }).where(eq(steps.id, id)).run();
-	}
+	get(db, id);
+	db.update(steps).set({ doneAt: done ? new Date().toISOString() : null }).where(eq(steps.id, id)).run();
 }
 
 /** «Убрать» — the step was not needed. */

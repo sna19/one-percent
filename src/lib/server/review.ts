@@ -7,6 +7,8 @@ import type { Db } from './db.js';
 import { categories, entries, formats, goals, milestones, planItems, practices, weekPlans, weekReviews } from './schema.js';
 import { ensureCurrentPlan, getPlanLimit } from './plan.js';
 import { progressUntil } from './milestones.js';
+import { openSteps } from './steps.js';
+import { STEP_STALE_DAYS } from '../steps.js';
 import { InputError } from './settings.js';
 
 /** Spec 010 — the weekly review, counted from marks and plans; only the retro answer is stored. */
@@ -226,6 +228,14 @@ export function computeReview(db: Db, start: DateStr, today: DateStr): WeeklyRev
 		paused: rows.filter((r) => r.pausedNow).map((r) => ({ goalId: r.goalId, title: r.title, supported: r.done > 0 })),
 		overload,
 		retroText: reviews.get(start)?.retroText ?? '',
+		staleStep: (() => {
+			const old = openSteps(db)
+				.filter((st) => st.createdAt.slice(0, 10) <= addDays(end, -STEP_STALE_DAYS))
+				.sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+			if (!old) return null;
+			const weeks = Math.floor((Date.parse(end) - Date.parse(old.createdAt.slice(0, 10))) / (7 * 86_400_000));
+			return { goalId: old.goalId, goalTitle: old.goalTitle, title: old.title, weeks };
+		})(),
 		noPlan: !plan
 	};
 }

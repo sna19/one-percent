@@ -3,7 +3,8 @@ import { eq } from 'drizzle-orm';
 import { openDb } from './db.js';
 import { seedIfEmpty } from './seed.js';
 import { goals, planItems, practices } from './schema.js';
-import { closeItem, createItem, dayChoices, editItem, listInbox, openCount, restoreItem, toDayNote, toNewGoal, toNewPractice, toPracticeNote } from './inbox.js';
+import { closeItem, createItem, dayChoices, editItem, listInbox, openCount, restoreItem, toDayNote, toNewGoal, toNewPractice, toPracticeNote, toStep } from './inbox.js';
+import { goalSteps } from './steps.js';
 import { plainToDoc } from '../inbox.js';
 import { applySource } from './plan.js';
 import { checklistStats } from '../note.js';
@@ -88,5 +89,15 @@ describe('inbox (Spec 008)', () => {
 		const d = dayChoices(db, '2026-11-17');
 		expect(d[0]).toBe('2026-11-17');
 		expect(d[d.length - 1]).toBe('2026-11-28');
+	});
+
+	it('#28: into a goal step — title from the first line, the rest is its note', () => {
+		const { db, add } = setup();
+		const g = db.select().from(goals).get()!;
+		toStep(db, add('Настроить пианино\nпозвонить настройщику').id!, g.id);
+		const st = goalSteps(db, g.id).open[0];
+		expect(st.title).toBe('Настроить пианино');
+		expect(JSON.stringify(st.note)).toContain('настройщику');
+		expect(listInbox(db).history[0].target).toBe(`Шаг цели: ${g.title}`);
 	});
 });
