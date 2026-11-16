@@ -5,7 +5,7 @@ import { amountLabel, pace } from '../milestones.js';
 import { REVIEW, type FadingRow, type GoalWeek, type MilestoneRow, type WeeklyReview } from '../review.js';
 import type { Db } from './db.js';
 import { categories, entries, formats, goals, milestones, planItems, practices, weekPlans, weekReviews } from './schema.js';
-import { getPlanLimit } from './plan.js';
+import { ensureCurrentPlan, getPlanLimit } from './plan.js';
 import { progressUntil } from './milestones.js';
 import { InputError } from './settings.js';
 
@@ -261,22 +261,21 @@ export function reviewPending(db: Db, today: DateStr): DateStr | null {
 	return r?.viewedAt ? null : last;
 }
 
-/** Focus of the week (Spec 010): up to three goals that have practices in this week's plan. */
-export function setFocus(db: Db, start: DateStr, goalIds: unknown) {
+/**
+ * Focus of the week (Spec 010; #26): up to three active goals — the ★ of the «Цели» screen. Owner (2026-11-16):
+ * any active goal may be in focus, not only goals of the week's plan. A week without a plan gets its draft first.
+ */
+export function setFocus(db: Db, start: DateStr, goalIds: unknown, today?: DateStr) {
 	if (!Array.isArray(goalIds) || !goalIds.every(Number.isInteger)) throw new InputError('Ожидается список целей');
 	const ids = [...new Set(goalIds as number[])];
 	if (ids.length > REVIEW.FOCUS_MAX) throw new InputError(`Фокус — не больше ${REVIEW.FOCUS_MAX} целей`);
-	const plan = db.select().from(weekPlans).where(eq(weekPlans.weekStart, start)).get();
+	let plan = db.select().from(weekPlans).where(eq(weekPlans.weekStart, start)).get();
+	if (!plan && today) {
+		ensureCurrentPlan(db, start, today);
+		plan = db.select().from(weekPlans).where(eq(weekPlans.weekStart, start)).get();
+	}
 	if (!plan) throw new InputError('У недели нет плана');
-	const inPlan = new Set(
-		db
-			.select({ g: practices.goalId })
-			.from(planItems)
-			.innerJoin(practices, eq(practices.id, planItems.practiceId))
-			.where(eq(planItems.weekPlanId, plan.id))
-			.all()
-			.map((r) => r.g)
-	);
-	if (!ids.every((g) => inPlan.has(g))) throw new InputError('В фокус — только цели из плана этой недели');
+	const active = new Set(db.select({ id: goals.id }).from(goals).where(and(isNull(goals.archivedAt), eq(goals.status, 'active'))).all().map((g) => g.id));
+	if (!ids.every((g) => active.has(g))) throw new InputError('В фокус — только активные цели');
 	db.update(weekPlans).set({ focusGoalIds: ids.length ? ids.join(',') : null }).where(eq(weekPlans.id, plan.id)).run();
 }

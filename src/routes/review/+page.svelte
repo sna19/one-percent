@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import TopBar from '#lib/TopBar.svelte';
+	import Star from '@lucide/svelte/icons/star';
 	import { backFrom } from '#lib/back.js';
 	import { addDays, todayStr, weekStart, type DateStr } from '#lib/dates.js';
 	import { amountLabel } from '#lib/milestones.js';
@@ -36,7 +37,27 @@
 		r = await res.json();
 		retro = saved = r!.retroText;
 	}
-	onMount(() => load(page.url.searchParams.get('start') ?? undefined));
+	onMount(() => {
+		load(page.url.searchParams.get('start') ?? undefined);
+		loadFocus();
+	});
+
+	// #26: ☆ / ★ — the focus of the current week can be set right from the review
+	let nowFocus = $state<number[] | null>(null);
+	async function loadFocus() {
+		const r = await fetch(`/api/plan?start=${weekStart(today)}&today=${today}`).catch(() => undefined);
+		if (r?.ok) nowFocus = (await r.json()).plan?.focus ?? [];
+	}
+	async function toggleFocus(goalId: number) {
+		if (!nowFocus) return;
+		const on = nowFocus.includes(goalId);
+		if (!on && nowFocus.length >= 3) {
+			error = 'В фокусе уже 3 цели — сними одну на экране «Цели»';
+			return;
+		}
+		const next = on ? nowFocus.filter((x) => x !== goalId) : [...nowFocus, goalId];
+		if (await post({ action: 'focus', start: weekStart(today), today, goalIds: next })) nowFocus = next;
+	}
 
 	async function post(body: Record<string, unknown>) {
 		const res = await fetch('/api/review', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => undefined);
@@ -90,6 +111,15 @@
 
 <svelte:head><title>Итоги недели</title></svelte:head>
 
+{#snippet fstar(goalId: number)}
+	{#if nowFocus}
+		{@const on = nowFocus.includes(goalId)}
+		<button class="fstar" class:on aria-pressed={on} aria-label={on ? 'Убрать из фокуса этой недели' : 'В фокус этой недели'} onclick={() => toggleFocus(goalId)}
+			><Star size={16} fill={on ? 'currentColor' : 'none'} /></button
+		>
+	{/if}
+{/snippet}
+
 <main>
 	<TopBar
 		help="review"
@@ -136,6 +166,7 @@
 						<li>
 							<a href="/settings/goal/{f.goalId}?from=week"><span class="dot" style="--c:{colorOf(f.color).light}"></span>{f.title}</a>
 							<span class="meta">{goalPlan(f)}{f.milestone ? ` · ${f.milestone}` : ''}</span>
+							{@render fstar(f.goalId)}
 						</li>
 					{/each}
 				</ul>
@@ -151,6 +182,7 @@
 						<li>
 							<a href="/settings/goal/{f.goalId}?from=week"><span class="dot" style="--c:{colorOf(f.color).light}"></span>{f.title}</a>
 							<span class="meta">{fadeText(f)}</span>
+							{@render fstar(f.goalId)}
 						</li>
 					{/each}
 				</ul>
@@ -231,7 +263,7 @@
 			<button class="fold" aria-expanded={showNormal} onclick={() => (showNormal = !showNormal)}>В норме: {goalsWord(r.normal.length)}</button>
 			{#if showNormal}
 				<ul class="rows sub">
-					{#each r.normal as g (g.goalId)}<li><a href="/settings/goal/{g.goalId}?from=week">{g.title}</a><span class="meta">{goalPlan(g)}</span></li>{/each}
+					{#each r.normal as g (g.goalId)}<li><a href="/settings/goal/{g.goalId}?from=week">{g.title}</a><span class="meta">{goalPlan(g)}</span>{@render fstar(g.goalId)}</li>{/each}
 				</ul>
 			{/if}
 		{/if}
@@ -338,6 +370,22 @@
 		text-align: right;
 		font-size: 13px;
 		color: var(--muted);
+	}
+	.fstar {
+		flex: none;
+		width: 36px;
+		height: 36px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: -8px;
+		border: none;
+		background: none;
+		color: var(--muted);
+		cursor: pointer;
+	}
+	.fstar.on {
+		color: var(--text);
 	}
 	.sub {
 		margin-top: 6px;

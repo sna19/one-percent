@@ -142,6 +142,9 @@ export function ensureCurrentPlan(db: Db, start: DateStr, today: DateStr): PlanV
 	const source: PlanSource = planRow(db, addDays(start, -7)) ? 'previous' : 'default';
 	// a new week: nothing is past yet except days before today, which stay unplanned
 	applySource(db, start, today, source);
+	// #26: the focus of the week carries over until it is changed
+	const prevFocus = planRow(db, addDays(start, -7))?.focusGoalIds;
+	if (prevFocus) db.update(weekPlans).set({ focusGoalIds: prevFocus }).where(eq(weekPlans.weekStart, start)).run();
 	return getPlan(db, start);
 }
 

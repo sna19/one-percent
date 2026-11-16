@@ -74,8 +74,13 @@
 
 	const active = $derived(chips.filter((c) => on.includes(c.key)));
 	const filtering = $derived(!!query.trim() || active.length > 0 || showArchive);
+	// #26: the owner's rule for every ★ — filled means chosen, and the chosen go first (within their goal)
+	const starred = (p: P) => !!(p as { recommended?: boolean }).recommended;
 	const shown = $derived(
-		filterTree(showArchive && archived ? archived : tree, { query, keep: active.map((c) => c.keep), goalsOnly: mode === 'goal' })
+		filterTree(showArchive && archived ? archived : tree, { query, keep: active.map((c) => c.keep), goalsOnly: mode === 'goal' }).map((c) => ({
+			...c,
+			goals: c.goals.map((g) => ({ ...g, practices: [...g.practices].sort((a, b) => Number(starred(b)) - Number(starred(a))) }))
+		}))
 	);
 	const count = $derived(shown.reduce((n, c) => n + (mode === 'goal' ? c.goals.length : c.goals.reduce((m, g) => m + g.practices.length, 0)), 0));
 
@@ -97,12 +102,12 @@
 	{#if mode === 'many'}
 		<label class="row">
 			<input type="checkbox" checked={isSel(p.id)} onchange={() => toggle(p.id)} />
-			<span class="t">{p.title}</span>
+			<span class="t">{#if starred(p)}<span class="st">★</span>{/if}{p.title}</span>
 			{#if note?.(p)}<em>{note(p)}</em>{/if}
 		</label>
 	{:else}
 		<button class="row" onclick={() => onPick?.(p, g)}>
-			<span class="t">{p.title}</span>
+			<span class="t">{#if starred(p)}<span class="st">★</span>{/if}{p.title}</span>
 			{#if note?.(p)}<em>{note(p)}</em>{/if}
 		</button>
 	{/if}
@@ -268,6 +273,10 @@
 	.row .t {
 		flex: 1;
 		min-width: 0;
+	}
+	.st {
+		margin-right: 4px;
+		color: var(--muted);
 	}
 	.row em {
 		font-style: normal;

@@ -6,7 +6,7 @@
 	import PracticeTree from '#lib/PracticeTree.svelte';
 	import { backFrom } from '#lib/back.js';
 	import { colorOf } from '#lib/palette.js';
-	import { buildArchivedTree, buildTree, goalOrder, moveGoal, movePractice, practiceOrder, type TreeCategory } from '#lib/tree.js';
+	import { buildArchivedTree, buildTree, starredFirst, goalOrder, moveGoal, movePractice, practiceOrder, type TreeCategory } from '#lib/tree.js';
 	import Plus from '@lucide/svelte/icons/plus';
 	import GripVertical from '@lucide/svelte/icons/grip-vertical';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
@@ -19,7 +19,7 @@
 	/** Spec 007 C — settings as a tree: category → goal → practice; each item edits on its own screen. */
 	let { data }: PageProps = $props();
 
-	const base = $derived(buildTree(data.categories, data.goals, data.practices));
+	const base = $derived(starredFirst(buildTree(data.categories, data.goals, data.practices)));
 	let preview = $state<TreeCategory[] | null>(null);
 	const tree = $derived(preview ?? base);
 	const formatName = (id: number | null) => data.formats.find((f) => f.id === id && !f.archivedAt)?.name;
@@ -190,7 +190,7 @@
 		{/snippet}
 		{#snippet practice(p)}
 			<a class="prow" href="/settings/practice/{p.id}">
-				<span class="ptitle">{p.title}</span>
+				<span class="ptitle">{#if (p as { recommended?: boolean }).recommended}<span class="pstar" aria-label="рекомендовано">★</span>{/if}{p.title}</span>
 				<span class="meta">{[formatName(p.formatId), dose(p)].filter(Boolean).join(' · ')}</span>
 			</a>
 			<button class="handle" aria-label="{p.title}: перетащить" title="Перетащить" onpointerdown={(e) => down(e, 'practice', p.id)}><GripVertical size={20} /></button>
@@ -214,6 +214,10 @@
 </main>
 
 <style>
+	.pstar {
+		margin-right: 4px;
+		color: var(--muted);
+	}
 	main {
 		max-width: 560px;
 		margin: 0 auto;

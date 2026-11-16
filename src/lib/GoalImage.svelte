@@ -14,8 +14,10 @@
 		/** the goal's title: the fallback letters */
 		title: string;
 		size?: number;
+		/** #26: a light fill of the category colour with a dark sign — calm in long lists */
+		soft?: boolean;
 	}
-	let { kind, value, color, title, size = 20 }: Props = $props();
+	let { kind, value, color, title, size = 20, soft = false }: Props = $props();
 
 	const c = $derived(colorOf(color));
 	const Icon = $derived(kind === 'icon' ? GOAL_ICONS[value] : undefined);
@@ -24,6 +26,7 @@
 
 <span
 	class="gi"
+	class:soft
 	style="--s:{size}px;--c-light:{c.light};--c-dark:{c.dark};font-size:{Math.round(size * (letters.length > 2 ? 0.34 : 0.42))}px"
 	aria-hidden="true"
 >
@@ -54,6 +57,16 @@
 	@media (prefers-color-scheme: dark) {
 		.gi {
 			--c: var(--c-dark);
+		}
+	}
+	.gi.soft {
+		background: color-mix(in oklab, var(--c-light) 22%, var(--surface));
+		color: color-mix(in oklab, var(--c-light) 70%, black);
+	}
+	@media (prefers-color-scheme: dark) {
+		.gi.soft {
+			background: color-mix(in oklab, var(--c-dark) 30%, var(--surface));
+			color: color-mix(in oklab, var(--c-dark) 55%, white);
 		}
 	}
 	.emoji {

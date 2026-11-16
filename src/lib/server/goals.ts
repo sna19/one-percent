@@ -1,7 +1,7 @@
 import { and, asc, eq, gte, isNull, lte } from 'drizzle-orm';
 import { addDays, weekDays, weekStart, type DateStr } from '../dates.js';
 import type { Db } from './db.js';
-import { categories, entries, goals, milestones, planItems, practices, volumesDone, weekPlans } from './schema.js';
+import { categories, entries, goals, milestones, planItems, planTemplates, practices, volumesDone, weekPlans } from './schema.js';
 import { progressUntil } from './milestones.js';
 import { richFirst } from '../note.js';
 
@@ -18,6 +18,7 @@ export interface GalleryGoal {
 	milestone: {
 		title: string;
 		dueDate: DateStr | null;
+		startDate: DateStr;
 		budgetKind: 'none' | 'sessions' | 'amount';
 		budgetUnit: string | null;
 		budgetTarget: number | null;
@@ -31,10 +32,23 @@ export interface GalleryGoal {
 	invested: { kind: 'hours' | 'days'; value: number };
 	achieved: number;
 	archivedAt?: string | null;
+	/** #26: the tiers of the screen */
+	categoryId: number;
+	/** ★ — in this week's focus (Spec 010) */
+	focus: boolean;
+	/** has practices in this week's plan */
+	inWeek: boolean;
+	/** out of this week's plan but planned in one of the 4 weeks before — paused by rotation */
+	rotation: boolean;
+	/** a practice with a volume (#24): «142 / 320 стр» */
+	volume: string | null;
 }
 
 export interface Gallery {
 	categories: { id: number; name: string; color: string; goals: GalleryGoal[] }[];
+	/** #26: this week's focus in its order, and the week template it was built from */
+	focus: number[];
+	template: string | null;
 	/** «Пройденный путь»: archived goals, newest first */
 	path: GalleryGoal[];
 }
@@ -63,6 +77,18 @@ export function gallery(db: Db, today: DateStr): Gallery {
 					.map((r) => byPractice.get(r.p)?.goalId)
 			: []
 	);
+	// #26: rotation — goals planned in the 4 weeks before this one
+	const earlier = new Set(
+		db
+			.select({ p: planItems.practiceId })
+			.from(planItems)
+			.where(and(gte(planItems.date, addDays(start, -28)), lte(planItems.date, addDays(start, -1))))
+			.all()
+			.map((r) => byPractice.get(r.p)?.goalId)
+	);
+	const focusIds = (plan?.focusGoalIds ?? '').split(',').filter(Boolean).map(Number);
+	const templateId = plan?.source.startsWith('template:') ? Number(plan.source.slice(9)) : null;
+	const template = templateId ? (db.select().from(planTemplates).where(eq(planTemplates.id, templateId)).get()?.name ?? null) : null;
 	const open = new Map(db.select().from(milestones).where(eq(milestones.status, 'open')).all().map((m) => [m.goalId, m]));
 	const achieved = new Map<number, number>();
 	for (const m of db.select({ g: milestones.goalId }).from(milestones).where(eq(milestones.status, 'achieved')).all())
@@ -88,6 +114,7 @@ export function gallery(db: Db, today: DateStr): Gallery {
 				? {
 						title: m.title,
 						dueDate: m.dueDate,
+						startDate: m.startDate,
 						budgetKind: m.budgetKind,
 						budgetUnit: m.budgetUnit,
 						budgetTarget: m.budgetTarget,
@@ -100,12 +127,27 @@ export function gallery(db: Db, today: DateStr): Gallery {
 				? { kind: 'hours', value: marks.filter((x) => ids.has(x.p) && x.a > 0).reduce((s, x) => s + x.a, 0) / 60 }
 				: { kind: 'days', value: doneDays.size },
 			achieved: achieved.get(g.id) ?? 0,
-			archivedAt: g.archivedAt
+			archivedAt: g.archivedAt,
+			categoryId: g.categoryId,
+			focus: focusIds.includes(g.id),
+			inWeek: inPlan.has(g.id),
+			rotation: !inPlan.has(g.id) && earlier.has(g.id),
+			volume: volumeLine(mine)
 		};
+	}
+
+	function volumeLine(mine: typeof ps): string | null {
+		const p = mine.find((x) => !x.archivedAt && x.volumeTotal != null && x.volumeSince);
+		if (!p) return null;
+		const pos = p.volumeStart + marks.filter((m) => m.p === p.id && m.d >= p.volumeSince!).reduce((sum, m) => sum + m.a, 0);
+		const r = (x: number) => String(Math.round(x * 10) / 10).replace('.', ',');
+		return `${r(Math.min(pos, p.volumeTotal!))} / ${r(p.volumeTotal!)} ${p.unit}`;
 	}
 
 	const active = all.filter((g) => !g.archivedAt && g.status === 'active');
 	return {
+		focus: focusIds.filter((id) => active.some((g) => g.id === id)),
+		template,
 		categories: cats.map((c) => ({ id: c.id, name: c.name, color: c.color, goals: active.filter((g) => g.categoryId === c.id).map(card) })).filter((c) => c.goals.length),
 		path: all
 			.filter((g) => g.archivedAt)

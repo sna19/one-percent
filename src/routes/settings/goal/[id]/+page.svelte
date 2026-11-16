@@ -20,7 +20,8 @@
 	import MilestoneForm from '#lib/milestone/MilestoneForm.svelte';
 	import MilestoneCheck from '#lib/milestone/MilestoneCheck.svelte';
 	import { amountLabel, budgetLabel, pace, remaining, type MilestoneView } from '#lib/milestones.js';
-	import { todayStr } from '#lib/dates.js';
+	import { todayStr, weekStart } from '#lib/dates.js';
+	import Star from '@lucide/svelte/icons/star';
 	import { dayTitle } from '#lib/today.js';
 	import type { PageProps } from './$types';
 
@@ -39,6 +40,31 @@
 	let imageKind = $state(g0.imageKind);
 	let imageValue = $state(g0.imageValue);
 	let picking = $state(false);
+
+	// #26: the week's focus (★), from this week's plan
+	let focusIds = $state<number[] | null>(null);
+	let focusMsg = $state<string | null>(null);
+	const inFocus = $derived(!!focusIds?.includes(g0.id));
+	onMount(async () => {
+		const r = await fetch(`/api/plan?start=${weekStart(todayStr())}&today=${todayStr()}`).catch(() => undefined);
+		if (r?.ok) focusIds = (await r.json()).plan?.focus ?? [];
+	});
+	async function toggleFocus() {
+		if (!focusIds) return;
+		focusMsg = null;
+		if (!inFocus && focusIds.length >= 3) {
+			focusMsg = 'В фокусе уже 3 цели — сними одну на экране «Цели» или здесь у неё.';
+			return;
+		}
+		const next = inFocus ? focusIds.filter((x) => x !== g0.id) : [...focusIds, g0.id];
+		const r = await fetch('/api/review', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ action: 'focus', start: weekStart(todayStr()), today: todayStr(), goalIds: next })
+		}).catch(() => undefined);
+		if (r?.ok) focusIds = next;
+		else focusMsg = (await r?.json().catch(() => null))?.message ?? 'Нет связи с сервером';
+	}
 	const changed = () => saver.save({ id: g0.id, title, categoryId, direction, milestoneText, imageKind, imageValue });
 	const catColor = $derived(data.categories.find((c) => c.id === categoryId)?.color ?? 'slate');
 
@@ -135,10 +161,19 @@
 		{saver.state.status === 'saving' ? 'Сохраняю…' : saver.state.status === 'saved' ? 'Сохранено' : saver.state.status === 'error' ? saver.state.message : ''}
 	</p>
 
-	<button class="image" onclick={() => (picking = true)} aria-label="Образ цели: изменить">
-		<GoalImage kind={imageKind} value={imageValue} color={catColor} {title} size={52} />
-		<span>Образ — изменить</span>
-	</button>
+	<div class="image-row">
+		<button class="image" onclick={() => (picking = true)} aria-label="Образ цели: изменить">
+			<GoalImage kind={imageKind} value={imageValue} color={catColor} {title} size={52} />
+			<span>Образ — изменить</span>
+		</button>
+		<!-- #26: ★ — this goal is in the week's focus; ☆ puts it there -->
+		{#if focusIds}
+			<button class="focus-star" class:on={inFocus} aria-pressed={inFocus} onclick={toggleFocus}
+				><Star size={20} fill={inFocus ? 'currentColor' : 'none'} />{inFocus ? 'В фокусе' : 'В фокус'}</button
+			>
+		{/if}
+	</div>
+	{#if focusMsg}<p class="status" role="alert">{focusMsg}</p>{/if}
 	{#if picking}
 		<GoalImagePicker
 			kind={imageKind}
@@ -438,6 +473,30 @@
 	}
 	.sheet-body {
 		overflow-y: auto;
+	}
+	.image-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 8px;
+	}
+	.focus-star {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		min-height: 44px;
+		padding: 0 12px;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: none;
+		color: var(--muted);
+		font: inherit;
+		font-size: 14px;
+		cursor: pointer;
+	}
+	.focus-star.on {
+		color: var(--text);
+		border-color: var(--text);
 	}
 	.image {
 		display: flex;

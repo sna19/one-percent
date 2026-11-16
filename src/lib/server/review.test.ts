@@ -74,7 +74,8 @@ describe('weekly review (Spec 010)', () => {
 		plan(W, [1, 2, 3]);
 		doAll(W, 1);
 		setFocus(db, W, [goal(1)]);
-		expect(() => setFocus(db, W, [goal(4)])).toThrow('только цели из плана');
+		setFocus(db, W, [goal(1), goal(4)]); // #26: any active goal
+		setFocus(db, W, [goal(1)]);
 		expect(() => setFocus(db, W, [1, 2, 3, 4].map(goal))).toThrow();
 		createMilestone(db, goal(2), { title: 'Скоро', startDate: '2026-10-01', dueDate: '2026-11-20' }, T);
 		createMilestone(db, goal(3), { title: 'Далеко', startDate: '2026-10-01', dueDate: '2027-03-01' }, T);
@@ -100,5 +101,16 @@ describe('weekly review (Spec 010)', () => {
 		markViewed(db, W);
 		expect(reviewPending(db, T)).toBeNull();
 		expect(weekDays(W)).toHaveLength(7);
+	});
+
+	it('#26: focus carries over to a new week; a week without a plan gets its draft', async () => {
+		const { ensureCurrentPlan, getPlan } = await import('./plan.js');
+		const { db, goal, plan } = setup();
+		plan(W, [1, 2]);
+		setFocus(db, W, [goal(2)]);
+		ensureCurrentPlan(db, addDays(W, 7), addDays(W, 7));
+		expect(getPlan(db, addDays(W, 7))!.focus).toEqual([goal(2)]);
+		setFocus(db, addDays(W, 14), [goal(1)], addDays(W, 8));
+		expect(getPlan(db, addDays(W, 14))!.focus).toEqual([goal(1)]);
 	});
 });

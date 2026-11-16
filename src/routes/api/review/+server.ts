@@ -27,7 +27,7 @@ export async function POST({ request }) {
 	if (!b || !isDateStr(b.start)) error(400, 'expected { action, start, … }');
 	try {
 		if (b.action === 'retro') saveRetro(getDb(), weekStart(b.start), b);
-		else if (b.action === 'focus') setFocus(getDb(), weekStart(b.start), b.goalIds);
+		else if (b.action === 'focus') setFocus(getDb(), weekStart(b.start), b.goalIds, isDateStr(b.today) ? b.today : undefined);
 		else error(400, 'unknown action');
 		return json({ ok: true });
 	} catch (e) {

@@ -211,3 +211,9 @@ export function buildArchivedTree(
 		}))
 		.filter((c) => c.goals.length);
 }
+
+/** #26: within each goal the ★ practices go first (a stable sort keeps the rest in order). */
+export function starredFirst<P>(t: TreeCategory<P>[]): TreeCategory<P>[] {
+	const star = (p: P) => Number(!!(p as { recommended?: boolean }).recommended);
+	return t.map((c) => ({ ...c, goals: c.goals.map((g) => ({ ...g, practices: [...g.practices].sort((a, b) => star(b) - star(a)) })) }));
+}
