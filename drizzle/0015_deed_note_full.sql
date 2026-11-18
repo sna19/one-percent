@@ -1,0 +1,1 @@
+ALTER TABLE `steps` ADD `show_note_full` integer DEFAULT false NOT NULL;

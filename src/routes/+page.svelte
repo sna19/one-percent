@@ -1251,11 +1251,25 @@
 							<button class="round" aria-label="Сделано: {r.p.title}" onclick={() => areaDone(r.p)}></button>
 							<button class="dt" aria-expanded={deedOpen === `p${r.p.id}`} onclick={() => toggleDeedRow(`p${r.p.id}`)}>{r.p.title}{#if nstats.total}<span class="dcount">{nstats.checked} из {nstats.total}</span>{/if}</button>
 							<a class="obj dw" href="/settings/goal/{r.p.goalId}?from={tab}">{r.p.goalTitle}</a>
-							<!-- a sphere's practice: its day note, or else its «Всегда» note — with the boxes, ticked here -->
-							{#if dn && !isEmptyNote(dn)}
-								<div class="dnote"><NoteView doc={dn} onToggle={(i) => saveDayNote(r.p, viewDay, toggleTask(dn, i))} onOpen={() => {}} /></div>
-							{:else if pn && !isEmptyNote(pn)}
-								<div class="dnote"><NoteView doc={pn} onToggle={(i) => saveNote(r.p, toggleTask(pn, i))} onOpen={() => {}} /></div>
+							<!-- the same as a skill's card: closed — the note's first block (the day note whole with «Показывать
+							     заметку дня целиком»); open — the day note and the «Всегда» note whole, with the boxes, and the icons -->
+							{@const open = deedOpen === `p${r.p.id}`}
+							{@const dayNote = dn && !isEmptyNote(dn) ? dn : null}
+							{@const showDay = !!dayNote && (r.p.showNoteFull || open)}
+							{@const first = showDay || open ? null : dayNote ? firstBlockDoc(dayNote) : firstBlockDoc(r.p.note)}
+							{#if first}{@render notePreview(first, `p${r.p.id}`)}{/if}
+							{#if showDay && dayNote}
+								<div class="dnote">
+									<NoteHead kind="day" label={dayTitle(viewDay)} day={Number(viewDay.slice(8))} />
+									<NoteView doc={dayNote} onToggle={(i) => saveDayNote(r.p, viewDay, toggleTask(dayNote, i))} onOpen={() => {}} />
+								</div>
+							{/if}
+							{#if open && r.p.note && !isEmptyNote(r.p.note)}
+								{@const pnote = r.p.note}
+								<div class="dnote">
+									<NoteHead kind="practice" />
+									<NoteView doc={pnote} onToggle={(i) => saveNote(r.p, toggleTask(pnote, i))} onOpen={() => {}} />
+								</div>
 							{/if}
 							{#if deedOpen === `p${r.p.id}`}<div class="dtools">{@render practiceTools(r.p)}</div>{/if}
 						{:else}
@@ -1269,9 +1283,17 @@
 									>{r.st.goalTitle}{#if r.st.dueDate} · до {dayTitle(r.st.dueDate).toLowerCase()}{/if}</a
 								>
 							{/if}
+							<!-- as a skill's card: closed — the description's first block, or all of it with «Показывать описание целиком»;
+							     open — all of it, the boxes ticked here, and the icons -->
+							{@const sopen = deedOpen === `s${r.st.id}`}
 							{#if r.st.note && !isEmptyNote(r.st.note)}
-								<!-- the deed's description in full: its subtasks can be ticked from here -->
-								<div class="dnote"><NoteView doc={r.st.note} onToggle={(i) => toggleDeedTask(r.st, i)} onOpen={() => {}} /></div>
+								{#if sopen || r.st.showNoteFull}
+									{@const snote = r.st.note}
+									<div class="dnote"><NoteView doc={snote} onToggle={(i) => toggleDeedTask(r.st, i)} onOpen={() => {}} /></div>
+								{:else}
+									{@const f = firstBlockDoc(r.st.note)}
+									{#if f}{@render notePreview(f, `s${r.st.id}`)}{/if}
+								{/if}
 							{/if}
 							{#if deedOpen === `s${r.st.id}`}{@render deedTools(r.st)}{/if}
 						{/if}
@@ -1428,6 +1450,12 @@
 		</div>
 		{@render sideButton(p, list, ids, `${p.title}: ${planned ? 'план дня и заметка' : 'доза и заметка'}`, () => openSheet(p, viewDay))}
 	</div>
+{/snippet}
+
+{#snippet notePreview(doc: NoteDoc, key: string)}
+	<!-- a closed row's note: one block, read only; a tap opens the row (links still work) -->
+	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+	<div class="dnote cline" onclick={(e) => { if (!(e.target as HTMLElement).closest('a')) toggleDeedRow(key); }}><NoteView {doc} preview /></div>
 {/snippet}
 
 {#snippet deedTools(st: StepView)}

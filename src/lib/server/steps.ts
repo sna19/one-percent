@@ -23,6 +23,7 @@ const view = (r: typeof steps.$inferSelect & { goalTitle: string; goalKind: stri
 	plannedDate: r.plannedDate,
 	dueDate: r.dueDate,
 	note: r.note ? JSON.parse(r.note) : null,
+	showNoteFull: !!r.showNoteFull,
 	sortOrder: r.sortOrder,
 	createdAt: r.createdAt,
 	doneAt: r.doneAt
@@ -38,6 +39,7 @@ function select(db: Db) {
 			plannedDate: steps.plannedDate,
 			dueDate: steps.dueDate,
 			note: steps.note,
+			showNoteFull: steps.showNoteFull,
 			sortOrder: steps.sortOrder,
 			createdAt: steps.createdAt,
 			doneAt: steps.doneAt,
@@ -147,6 +149,7 @@ export function updateStep(db: Db, id: number, b: Record<string, unknown>) {
 		set.practiceId = null;
 	}
 	if ('note' in b) set.note = noteJson(b.note);
+	if ('showNoteFull' in b) set.showNoteFull = b.showNoteFull === true;
 	db.update(steps).set(set).where(eq(steps.id, id)).run();
 }
 

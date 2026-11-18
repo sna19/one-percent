@@ -256,6 +256,8 @@ export const steps = sqliteTable('steps', {
 	dueDate: text('due_date'),
 	/** note document (Tiptap JSON), optional */
 	note: text('note'),
+	/** the description shown whole on «Сегодня», as a practice's «Показывать заметку дня целиком» */
+	showNoteFull: integer('show_note_full', { mode: 'boolean' }).notNull().default(false),
 	sortOrder: integer('sort_order').notNull().default(0),
 	createdAt: createdAt(),
 	doneAt: text('done_at')

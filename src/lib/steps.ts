@@ -19,6 +19,8 @@ export interface StepView {
 	/** #30: a deadline, optional */
 	dueDate: DateStr | null;
 	note: NoteDoc | null;
+	/** the description shown whole on «Сегодня»; otherwise only its first block until the row is opened */
+	showNoteFull?: boolean;
 	sortOrder: number;
 	createdAt: string;
 	doneAt: string | null;

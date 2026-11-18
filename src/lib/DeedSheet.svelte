@@ -79,6 +79,9 @@
 			<span>Описание и подзадачи</span>
 			<RichEditor bind:this={rich} grow label="Описание дела" doc={step.note} onChange={(d) => onSave({ note: d })} />
 		</div>
+		<label class="toggle"
+			><input type="checkbox" checked={!!step.showNoteFull} onchange={(ev) => onSave({ showNoteFull: ev.currentTarget.checked })} /> Показывать описание целиком на «Сегодня»</label
+		>
 		<button class="remove" onclick={onRemove}>Убрать дело</button>
 	</div>
 </div>
@@ -191,6 +194,19 @@
 		color: var(--text);
 		font: inherit;
 		font-size: 16px;
+	}
+	label.toggle {
+		flex-direction: row;
+		align-items: center;
+		gap: 10px;
+		font-size: 15px;
+		color: var(--text);
+	}
+	label.toggle input {
+		min-height: 0;
+		width: 22px;
+		height: 22px;
+		margin: 0;
 	}
 	.remove {
 		align-self: flex-start;
