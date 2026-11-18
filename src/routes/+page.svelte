@@ -371,6 +371,19 @@
 		deedSheetId = null;
 		await load();
 	}
+	/** a row of «Дела» opened in place, like a skill's card: `p<id>` a sphere's practice, `s<id>` a deed */
+	let deedOpen = $state<string | null>(null);
+	let deedWhen = $state<number | null>(null);
+	const toggleDeedRow = (k: string) => {
+		deedOpen = deedOpen === k ? null : k;
+		deedWhen = null;
+		qtyOpen = undefined;
+	};
+	async function planDeed(st: StepView, date: string | null) {
+		deedWhen = null;
+		if (week?.steps) week.steps = week.steps.map((x) => (x.id === st.id ? { ...x, plannedDate: date } : x));
+		if (!(await stepCall({ action: 'update', id: st.id, fields: { plannedDate: date } }))) await load();
+	}
 	async function areaDone(p: PracticeView) {
 		await mark(p, viewDay, counts(amountOf(p.id, viewDay), p) ? 0 : p.normDose);
 	}
@@ -1236,7 +1249,7 @@
 							{@const pn = dn && !isEmptyNote(dn) ? null : r.p.note}
 							{@const nstats = checklistStats(dn ?? pn)}
 							<button class="round" aria-label="Сделано: {r.p.title}" onclick={() => areaDone(r.p)}></button>
-							<button class="dt" onclick={() => openSheet(r.p, viewDay, pn && !isEmptyNote(pn) ? 'practice' : undefined)}>{r.p.title}{#if nstats.total}<span class="dcount">{nstats.checked} из {nstats.total}</span>{/if}</button>
+							<button class="dt" aria-expanded={deedOpen === `p${r.p.id}`} onclick={() => toggleDeedRow(`p${r.p.id}`)}>{r.p.title}{#if nstats.total}<span class="dcount">{nstats.checked} из {nstats.total}</span>{/if}</button>
 							<a class="obj dw" href="/settings/goal/{r.p.goalId}?from={tab}">{r.p.goalTitle}</a>
 							<!-- a sphere's practice: its day note, or else its «Всегда» note — with the boxes, ticked here -->
 							{#if dn && !isEmptyNote(dn)}
@@ -1244,10 +1257,11 @@
 							{:else if pn && !isEmptyNote(pn)}
 								<div class="dnote"><NoteView doc={pn} onToggle={(i) => saveNote(r.p, toggleTask(pn, i))} onOpen={() => {}} /></div>
 							{/if}
+							{#if deedOpen === `p${r.p.id}`}<div class="dtools">{@render practiceTools(r.p)}</div>{/if}
 						{:else}
 							{@const stats = checklistStats(r.st.note)}
 							<button class="round" aria-label="Сделано: {r.st.title}" onclick={() => stepDone(r.st)}></button>
-							<button class="dt" onclick={() => (deedSheetId = r.st.id)}>{r.st.title}{#if stats.total}<span class="dcount">{stats.checked} из {stats.total}</span>{/if}</button>
+							<button class="dt" aria-expanded={deedOpen === `s${r.st.id}`} onclick={() => toggleDeedRow(`s${r.st.id}`)}>{r.st.title}{#if stats.total}<span class="dcount">{stats.checked} из {stats.total}</span>{/if}</button>
 							{#if r.kind === 'first'}
 								<span class="dw">сначала · <a class="obj" href="/settings/practice/{r.p.id}?from={tab}">{r.p.title}</a></span>
 							{:else}
@@ -1259,6 +1273,7 @@
 								<!-- the deed's description in full: its subtasks can be ticked from here -->
 								<div class="dnote"><NoteView doc={r.st.note} onToggle={(i) => toggleDeedTask(r.st, i)} onOpen={() => {}} /></div>
 							{/if}
+							{#if deedOpen === `s${r.st.id}`}{@render deedTools(r.st)}{/if}
 						{/if}
 					</li>
 				{/each}
@@ -1406,83 +1421,124 @@
 						<form class="vol-form" onsubmit={(e) => { e.preventDefault(); addStep(p, e.currentTarget); }}>
 							<input name="step" placeholder="+ Дело для «{p.title}»" aria-label="Новое дело практики" />
 						</form>
-						{#if qtyOpen === p.id}
-							<form
-								class="qty"
-								onsubmit={(e) => {
-									e.preventDefault();
-									const v = Number(String(new FormData(e.currentTarget).get('q') ?? '').replace(',', '.'));
-									if (Number.isFinite(v) && v >= 0) {
-										mark(p, viewDay, v);
-										qtyOpen = undefined;
-									}
-								}}
-							>
-								<!-- svelte-ignore a11y_autofocus -->
-								<input name="q" inputmode="decimal" placeholder="Количество, {p.unit}" aria-label="Количество, {p.unit}" value={a ?? ''} autofocus />
-								<button type="submit" aria-label="Записать количество">✓</button>
-							</form>
-						{/if}
 					{/if}
-					<!-- task 13: one row of icons; new actions are added here as more buttons -->
-					<div class="actions" role="toolbar" aria-label="{p.title}: действия">
-						<button
-							class:dim={!p.note}
-							aria-label="Заметка «Всегда»: {p.note ? 'изменить' : 'создать'}"
-							title="Заметка «Всегда»"
-							onclick={() => openSheet(p, viewDay, 'practice')}><FilePen size={22} /></button
-						>
-						{#if planned}
-							<button
-								class:dim={!dayNote}
-								aria-label="Заметка дня, {dayTitle(viewDay)}: {dayNote ? 'изменить' : 'создать'}"
-								title="Заметка дня, {dayTitle(viewDay)}"
-								onclick={() => openSheet(p, viewDay, 'day')}><DayIcon day={Number(viewDay.slice(8))} /></button
-							>
-						{/if}
-						<button
-							aria-label="Когда: {p.title}"
-							title="Когда"
-							onclick={() => (whenFor = { p, day: viewDay })}><CalendarArrowRight size={22} /></button
-						>
-						{@render star(p)}
-						<button
-							class="link-btn"
-							class:on={p.inLinks}
-							aria-pressed={!!p.inLinks}
-							aria-label="{p.title}: {p.inLinks ? 'убрать из «Ссылок»' : 'в «Ссылки»'}"
-							title={p.inLinks ? 'В «Ссылках»' : 'В «Ссылки»'}
-							onclick={() => toggleInLinks(p)}><LinkIcon size={20} strokeWidth={p.inLinks ? 2.6 : 2} /></button
-						>
-						<a
-							class="flag-btn"
-							class:dim={!week?.milestones?.[p.goalId]}
-							href="/settings/goal/{p.goalId}?from={tab}"
-							aria-label="Цель «{p.goalTitle}»: майлстон и прогресс"
-							title="Майлстон"><Flag size={22} /></a
-						>
-						<a
-							class="flag-btn"
-							href="/settings/practice/{p.id}?from={tab}"
-							aria-label="Настройки практики «{p.title}»"
-							title="Настройки практики"><SlidersHorizontal size={22} /></a
-						>
-						{#if !auto && !isFutureDay}
-							<button
-								class="qty-btn"
-								class:on={qtyOpen === p.id}
-								aria-label="Своё количество, {p.unit}"
-								aria-expanded={qtyOpen === p.id}
-								title="Своё количество"
-								onclick={() => (qtyOpen = qtyOpen === p.id ? undefined : p.id)}>±</button
-							>
-						{/if}
-					</div>
+					{@render practiceTools(p)}
 				</div>
 			{/if}
 		</div>
 		{@render sideButton(p, list, ids, `${p.title}: ${planned ? 'план дня и заметка' : 'доза и заметка'}`, () => openSheet(p, viewDay))}
 	</div>
+{/snippet}
+
+{#snippet deedTools(st: StepView)}
+	<!-- a deed's icon row: the same look as a practice's, only what a deed has -->
+	<div class="dtools">
+		{#if deedWhen === st.id}
+			<div class="dwhen">
+				<button onclick={() => planDeed(st, addDays(today, 1))}>На завтра</button>
+				<label>День <input type="date" value={st.plannedDate ?? ''} onchange={(e) => planDeed(st, e.currentTarget.value || null)} /></label>
+				{#if st.plannedDate}<button onclick={() => planDeed(st, null)}>Без дня</button>{/if}
+			</div>
+		{/if}
+		<div class="actions few" role="toolbar" aria-label="{st.title}: действия">
+			<button
+				class:dim={!st.note || (isEmptyNote(st.note) && !checklistStats(st.note).total)}
+				aria-label="Описание дела «{st.title}»"
+				title="Описание и подзадачи"
+				onclick={() => (deedSheetId = st.id)}><FilePen size={22} /></button
+			>
+			<button
+				class:on={deedWhen === st.id}
+				aria-label="Когда: {st.title}"
+				aria-expanded={deedWhen === st.id}
+				title="Когда"
+				onclick={() => (deedWhen = deedWhen === st.id ? null : st.id)}><CalendarArrowRight size={22} /></button
+			>
+			<a class="flag-btn" href="/settings/goal/{st.goalId}?from={tab}" aria-label="Цель «{st.goalTitle}»" title="Цель"><Flag size={22} /></a>
+			<button aria-label="Дело «{st.title}»: все поля" title="Дело" onclick={() => (deedSheetId = st.id)}><SlidersHorizontal size={22} /></button>
+		</div>
+	</div>
+{/snippet}
+
+{#snippet practiceTools(p: PracticeView)}
+	<!-- the icon row of a practice — a skill's card and a sphere's row in «Дела» -->
+	{@const planned = isPlanned(p.id, viewDay)}
+	{@const dayNote = planned ? dayNoteOf(p.id, viewDay) : null}
+	{@const a = amountOf(p.id, viewDay)}
+	{@const auto = byChecklist(p, viewDay)}
+	{#if !auto && !isFutureDay}
+	{#if qtyOpen === p.id}
+		<form
+			class="qty"
+			onsubmit={(e) => {
+				e.preventDefault();
+				const v = Number(String(new FormData(e.currentTarget).get('q') ?? '').replace(',', '.'));
+				if (Number.isFinite(v) && v >= 0) {
+					mark(p, viewDay, v);
+					qtyOpen = undefined;
+				}
+			}}
+		>
+			<!-- svelte-ignore a11y_autofocus -->
+			<input name="q" inputmode="decimal" placeholder="Количество, {p.unit}" aria-label="Количество, {p.unit}" value={a ?? ''} autofocus />
+			<button type="submit" aria-label="Записать количество">✓</button>
+		</form>
+	{/if}
+	{/if}
+<!-- task 13: one row of icons; new actions are added here as more buttons -->
+<div class="actions" role="toolbar" aria-label="{p.title}: действия">
+	<button
+		class:dim={!p.note}
+		aria-label="Заметка «Всегда»: {p.note ? 'изменить' : 'создать'}"
+		title="Заметка «Всегда»"
+		onclick={() => openSheet(p, viewDay, 'practice')}><FilePen size={22} /></button
+	>
+	{#if planned}
+		<button
+			class:dim={!dayNote}
+			aria-label="Заметка дня, {dayTitle(viewDay)}: {dayNote ? 'изменить' : 'создать'}"
+			title="Заметка дня, {dayTitle(viewDay)}"
+			onclick={() => openSheet(p, viewDay, 'day')}><DayIcon day={Number(viewDay.slice(8))} /></button
+		>
+	{/if}
+	<button
+		aria-label="Когда: {p.title}"
+		title="Когда"
+		onclick={() => (whenFor = { p, day: viewDay })}><CalendarArrowRight size={22} /></button
+	>
+	{@render star(p)}
+	<button
+		class="link-btn"
+		class:on={p.inLinks}
+		aria-pressed={!!p.inLinks}
+		aria-label="{p.title}: {p.inLinks ? 'убрать из «Ссылок»' : 'в «Ссылки»'}"
+		title={p.inLinks ? 'В «Ссылках»' : 'В «Ссылки»'}
+		onclick={() => toggleInLinks(p)}><LinkIcon size={20} strokeWidth={p.inLinks ? 2.6 : 2} /></button
+	>
+	<a
+		class="flag-btn"
+		class:dim={!week?.milestones?.[p.goalId]}
+		href="/settings/goal/{p.goalId}?from={tab}"
+		aria-label="Цель «{p.goalTitle}»: майлстон и прогресс"
+		title="Майлстон"><Flag size={22} /></a
+	>
+	<a
+		class="flag-btn"
+		href="/settings/practice/{p.id}?from={tab}"
+		aria-label="Настройки практики «{p.title}»"
+		title="Настройки практики"><SlidersHorizontal size={22} /></a
+	>
+	{#if !auto && !isFutureDay}
+		<button
+			class="qty-btn"
+			class:on={qtyOpen === p.id}
+			aria-label="Своё количество, {p.unit}"
+			aria-expanded={qtyOpen === p.id}
+			title="Своё количество"
+			onclick={() => (qtyOpen = qtyOpen === p.id ? undefined : p.id)}>±</button
+		>
+	{/if}
+</div>
 {/snippet}
 
 {#snippet vline(p: PracticeView)}
@@ -2613,6 +2669,48 @@
 		flex: 1;
 		min-width: 0;
 		font-size: 16px;
+	}
+	.dtools {
+		--fg: var(--text);
+		flex-basis: 100%;
+		padding: 4px 0 0 34px;
+		box-sizing: border-box;
+	}
+	.dtools .actions {
+		margin: 0 -6px 0 -10px;
+	}
+	.dtools .actions.few {
+		justify-content: flex-start;
+		gap: 14px;
+	}
+	.deeds .dtools .actions button.on {
+		background: color-mix(in oklab, var(--fg) 14%, transparent);
+	}
+	.dwhen {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-end;
+		gap: 8px;
+		margin-bottom: 6px;
+	}
+	.dwhen button,
+	.dwhen input {
+		min-height: 40px;
+		padding: 0 12px;
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		background: var(--bg);
+		color: var(--text);
+		font: inherit;
+		font-size: 15px;
+		cursor: pointer;
+	}
+	.dwhen label {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		font-size: 12px;
+		color: var(--muted);
 	}
 	button.dt {
 		padding: 4px 0;
