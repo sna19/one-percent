@@ -1195,9 +1195,18 @@
 				{#each rows as r (r.kind === 'area' ? `p${r.p.id}` : `s${r.st.id}`)}
 					<li>
 						{#if r.kind === 'area'}
+							{@const dn = dayNoteOf(r.p.id, viewDay)}
+							{@const pn = dn && !isEmptyNote(dn) ? null : r.p.note}
+							{@const nstats = checklistStats(dn ?? pn)}
 							<button class="round" aria-label="Сделано: {r.p.title}" onclick={() => areaDone(r.p)}></button>
-							<span class="dt">{r.p.title}</span>
+							<span class="dt">{r.p.title}{#if nstats.total}<span class="dcount">{nstats.checked} из {nstats.total}</span>{/if}</span>
 							<a class="obj dw" href="/settings/goal/{r.p.goalId}?from={tab}">{r.p.goalTitle}</a>
+							<!-- a sphere's practice: its day note, or else its «Всегда» note — with the boxes, ticked here -->
+							{#if dn && !isEmptyNote(dn)}
+								<div class="dnote"><NoteView doc={dn} onToggle={(i) => saveDayNote(r.p, viewDay, toggleTask(dn, i))} onOpen={() => {}} /></div>
+							{:else if pn && !isEmptyNote(pn)}
+								<div class="dnote"><NoteView doc={pn} onToggle={(i) => saveNote(r.p, toggleTask(pn, i))} onOpen={() => {}} /></div>
+							{/if}
 						{:else}
 							{@const stats = checklistStats(r.st.note)}
 							<button class="round" aria-label="Сделано: {r.st.title}" onclick={() => stepDone(r.st)}></button>
