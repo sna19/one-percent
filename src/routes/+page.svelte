@@ -18,6 +18,7 @@
 	import { crossfade } from 'svelte/transition';
 	import { flip } from 'svelte/animate';
 	import NoteSheet from '#lib/NoteSheet.svelte';
+	import DeedSheet from '#lib/DeedSheet.svelte';
 	import TopBar from '#lib/TopBar.svelte';
 	import { page } from '$app/state';
 	import { keyOf, nav, screenOf } from '#lib/nav.svelte.js';
@@ -348,6 +349,27 @@
 		const note = toggleTask(st.note, i);
 		if (week?.steps) week.steps = week.steps.map((x) => (x.id === st.id ? { ...x, note } : x));
 		if (!(await stepCall({ action: 'update', id: st.id, fields: { note } }))) await load();
+	}
+	/** a tap on a deed's row opens its sheet — the same as on the goal's screen */
+	let deedSheetId = $state<number | null>(null);
+	const deedSheet = $derived(deedSheetId === null ? undefined : week?.steps?.find((x) => x.id === deedSheetId));
+	async function saveDeed(fields: Record<string, unknown>) {
+		const id = deedSheetId;
+		if (id === null) return;
+		if (week?.steps) week.steps = week.steps.map((x) => (x.id === id ? { ...x, ...fields } as StepView : x));
+		if (!(await stepCall({ action: 'update', id, fields }))) await load();
+	}
+	async function removeDeed() {
+		const st = deedSheet;
+		if (!st || !confirm(`Убрать дело «${st.title}»?`)) return;
+		deedSheetId = null;
+		if (week?.steps) week.steps = week.steps.filter((x) => x.id !== st.id);
+		await stepCall({ action: 'delete', id: st.id });
+		await load();
+	}
+	async function closeDeed() {
+		deedSheetId = null;
+		await load();
 	}
 	async function areaDone(p: PracticeView) {
 		await mark(p, viewDay, counts(amountOf(p.id, viewDay), p) ? 0 : p.normDose);
@@ -1050,6 +1072,21 @@
 	{/key}
 {/if}
 
+{#if deedSheet}
+	{@const ds = deedSheet}
+	<DeedSheet
+		step={ds}
+		practices={(week?.practices ?? []).filter((x) => x.goalId === ds.goalId)}
+		onSave={saveDeed}
+		onRemove={removeDeed}
+		onDone={() => {
+			deedSheetId = null;
+			stepDone(ds);
+		}}
+		onClose={closeDeed}
+	/>
+{/if}
+
 {#snippet todayScreen()}
 	{#if zones && viewDay >= today}
 		{@render deedsZone()}
@@ -1062,7 +1099,7 @@
 				{#each stepsShowAll ? goalStepsToday : goalStepsToday.slice(0, appNum('today.steps_rows')) as st (st.id)}
 					<li>
 						<input type="checkbox" aria-label="Шаг сделан: {st.title}" onchange={(e) => { e.currentTarget.checked = false; stepDone(st); }} />
-						<span class="sttl">{st.title}</span>
+						<button class="sttl" onclick={() => (deedSheetId = st.id)}>{st.title}</button>
 						<a class="obj sgoal" href="/settings/goal/{st.goalId}?from={tab}">{st.goalTitle}</a>
 						{#if st.note && !isEmptyNote(st.note)}
 							<div class="dnote classic"><NoteView doc={st.note} onToggle={(i) => toggleDeedTask(st, i)} onOpen={() => {}} /></div>
@@ -1199,7 +1236,7 @@
 							{@const pn = dn && !isEmptyNote(dn) ? null : r.p.note}
 							{@const nstats = checklistStats(dn ?? pn)}
 							<button class="round" aria-label="Сделано: {r.p.title}" onclick={() => areaDone(r.p)}></button>
-							<span class="dt">{r.p.title}{#if nstats.total}<span class="dcount">{nstats.checked} из {nstats.total}</span>{/if}</span>
+							<button class="dt" onclick={() => openSheet(r.p, viewDay, pn && !isEmptyNote(pn) ? 'practice' : undefined)}>{r.p.title}{#if nstats.total}<span class="dcount">{nstats.checked} из {nstats.total}</span>{/if}</button>
 							<a class="obj dw" href="/settings/goal/{r.p.goalId}?from={tab}">{r.p.goalTitle}</a>
 							<!-- a sphere's practice: its day note, or else its «Всегда» note — with the boxes, ticked here -->
 							{#if dn && !isEmptyNote(dn)}
@@ -1210,7 +1247,7 @@
 						{:else}
 							{@const stats = checklistStats(r.st.note)}
 							<button class="round" aria-label="Сделано: {r.st.title}" onclick={() => stepDone(r.st)}></button>
-							<span class="dt">{r.st.title}{#if stats.total}<span class="dcount">{stats.checked} из {stats.total}</span>{/if}</span>
+							<button class="dt" onclick={() => (deedSheetId = r.st.id)}>{r.st.title}{#if stats.total}<span class="dcount">{stats.checked} из {stats.total}</span>{/if}</button>
 							{#if r.kind === 'first'}
 								<span class="dw">сначала · <a class="obj" href="/settings/practice/{r.p.id}?from={tab}">{r.p.title}</a></span>
 							{:else}
@@ -2061,6 +2098,15 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
+	button.sttl {
+		padding: 4px 0;
+		border: none;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
 	.more-steps {
 		flex: none;
 		font-size: 12px;
@@ -2567,6 +2613,16 @@
 		flex: 1;
 		min-width: 0;
 		font-size: 16px;
+	}
+	button.dt {
+		padding: 4px 0;
+		border: none;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		font-size: 16px;
+		text-align: left;
+		cursor: pointer;
 	}
 	.dw {
 		flex-basis: 100%;

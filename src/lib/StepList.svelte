@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import GripVertical from '@lucide/svelte/icons/grip-vertical';
 	import { sortable } from './sortable.js';
-	import RichEditor from './RichEditor.svelte';
+	import DeedSheet from './DeedSheet.svelte';
 	import type { StepView } from './steps.js';
 	import { appNum } from './appSettings.svelte.js';
 	import { dayTitle } from './today.js';
@@ -132,28 +132,7 @@
 </div>
 
 {#if editing}
-	{@const e = editing}
-	<div class="backdrop" role="presentation" onclick={closeEdit}></div>
-	<div class="sheet" role="dialog" aria-label="Дело">
-		<header><span class="st">Дело</span><button class="donebtn" onclick={closeEdit}>Готово</button></header>
-		<div class="body">
-			<label>Что сделать <input value={e.title} onchange={(ev) => saveEdit({ title: ev.currentTarget.value })} /></label>
-			<label
-				>Часть практики — «сначала»
-				<select value={e.practiceId ?? ''} onchange={(ev) => saveEdit({ practiceId: ev.currentTarget.value ? Number(ev.currentTarget.value) : null })}>
-					<option value="">— дело само по себе —</option>
-					{#each practices as p (p.id)}<option value={p.id}>{p.title}</option>{/each}
-				</select>
-			</label>
-			<label>Когда делаю (необязательно) <input type="date" value={e.plannedDate ?? ''} onchange={(ev) => saveEdit({ plannedDate: ev.currentTarget.value || null })} /></label>
-			<label>Срок — до (необязательно) <input type="date" value={e.dueDate ?? ''} onchange={(ev) => saveEdit({ dueDate: ev.currentTarget.value || null })} /></label>
-			<div class="field">
-				<span>Заметка</span>
-				<RichEditor grow label="Заметка дела" doc={e.note} onChange={(d) => saveEdit({ note: d })} />
-			</div>
-			<button class="remove" onclick={remove}>Убрать дело</button>
-		</div>
-	</div>
+	<DeedSheet step={editing} {practices} onSave={saveEdit} onRemove={remove} onClose={closeEdit} />
 {/if}
 
 <style>
@@ -262,78 +241,6 @@
 		color: var(--text);
 		font: inherit;
 		font-size: 13px;
-		cursor: pointer;
-	}
-	.backdrop {
-		position: fixed;
-		inset: 0;
-		z-index: 20;
-		background: rgb(0 0 0 / 0.35);
-	}
-	.sheet {
-		position: fixed;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		z-index: 21;
-		max-width: 560px;
-		max-height: 85vh;
-		margin: 0 auto;
-		display: flex;
-		flex-direction: column;
-		padding: 8px 16px calc(env(safe-area-inset-bottom) + 12px);
-		background: var(--surface);
-		border-radius: 16px 16px 0 0;
-	}
-	.sheet header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		min-height: 44px;
-	}
-	.st {
-		font-weight: 700;
-	}
-	.donebtn {
-		border: none;
-		background: none;
-		color: var(--text);
-		font: inherit;
-		font-weight: 600;
-		cursor: pointer;
-	}
-	.body {
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-		overflow-y: auto;
-	}
-	.body label,
-	.field {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		font-size: 13px;
-		color: var(--muted);
-	}
-	.body input,
-	.body select {
-		min-height: 44px;
-		padding: 0 10px;
-		border: 1px solid var(--line);
-		border-radius: 10px;
-		background: var(--bg);
-		color: var(--text);
-		font: inherit;
-		font-size: 16px;
-	}
-	.remove {
-		align-self: flex-start;
-		min-height: 40px;
-		border: none;
-		background: none;
-		color: var(--muted);
-		font: inherit;
 		cursor: pointer;
 	}
 </style>
