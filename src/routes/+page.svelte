@@ -56,7 +56,7 @@
 	import { treeOfPractices } from '#lib/tree.js';
 	import DayIcon from '#lib/DayIcon.svelte';
 	import NoteView from '#lib/NoteView.svelte';
-	import { checklistAmount, checklistStats, firstBlockDoc, firstLine, toggleTask, type NoteDoc } from '#lib/note.js';
+	import { checklistAmount, checklistStats, firstBlockDoc, firstLine, isEmptyNote, toggleTask, type NoteDoc } from '#lib/note.js';
 	import type { PracticeView, WeekData } from '#lib/types.js';
 
 	const DAY_NAMES = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
@@ -341,6 +341,13 @@
 		if (!deedGoal) return (pickingGoal = true);
 		deedTitle = '';
 		if (await stepCall({ action: 'create', goalId: deedGoal.id, title: t, plannedDate: viewDay < today ? today : viewDay })) await load();
+	}
+	// a deed's description with its subtasks (a checklist) — ticked right here, saved into the deed's note
+	async function toggleDeedTask(st: StepView, i: number) {
+		if (!st.note) return;
+		const note = toggleTask(st.note, i);
+		if (week?.steps) week.steps = week.steps.map((x) => (x.id === st.id ? { ...x, note } : x));
+		if (!(await stepCall({ action: 'update', id: st.id, fields: { note } }))) await load();
 	}
 	async function areaDone(p: PracticeView) {
 		await mark(p, viewDay, counts(amountOf(p.id, viewDay), p) ? 0 : p.normDose);
@@ -1189,14 +1196,19 @@
 							<span class="dt">{r.p.title}</span>
 							<a class="obj dw" href="/settings/goal/{r.p.goalId}?from={tab}">{r.p.goalTitle}</a>
 						{:else}
+							{@const stats = checklistStats(r.st.note)}
 							<button class="round" aria-label="Сделано: {r.st.title}" onclick={() => stepDone(r.st)}></button>
-							<span class="dt">{r.st.title}</span>
+							<span class="dt">{r.st.title}{#if stats.total}<span class="dcount">{stats.checked} из {stats.total}</span>{/if}</span>
 							{#if r.kind === 'first'}
 								<span class="dw">сначала · <a class="obj" href="/settings/practice/{r.p.id}?from={tab}">{r.p.title}</a></span>
 							{:else}
 								<a class="obj dw" href="/settings/goal/{r.st.goalId}?from={tab}"
 									>{r.st.goalTitle}{#if r.st.dueDate} · до {dayTitle(r.st.dueDate).toLowerCase()}{/if}</a
 								>
+							{/if}
+							{#if r.st.note && !isEmptyNote(r.st.note)}
+								<!-- the deed's description in full: its subtasks can be ticked from here -->
+								<div class="dnote"><NoteView doc={r.st.note} onToggle={(i) => toggleDeedTask(r.st, i)} onOpen={() => {}} /></div>
 							{/if}
 						{/if}
 					</li>
@@ -2667,5 +2679,15 @@
 	}
 	.sbody {
 		overflow-y: auto;
+	}
+	.dcount {
+		margin-left: 8px;
+		font-size: 12px;
+		color: var(--muted);
+	}
+	.dnote {
+		flex-basis: 100%;
+		padding-left: 34px;
+		font-size: 15px;
 	}
 </style>
