@@ -42,8 +42,10 @@
 	import CalendarArrowRight from '@lucide/svelte/icons/calendar-arrow-right';
 	import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
 	import WhenSheet from '#lib/WhenSheet.svelte';
-	import type { StepView } from '#lib/steps.js';
-	import { appNum } from '#lib/appSettings.svelte.js';
+	import { deedToday, type StepView } from '#lib/steps.js';
+	import { appNum, appSettings, setAppSettings } from '#lib/appSettings.svelte.js';
+	import Rows3 from '@lucide/svelte/icons/rows-3';
+	import { buildTree } from '#lib/tree.js';
 	import GoalImage from '#lib/GoalImage.svelte';
 	import ChartNoAxesColumn from '@lucide/svelte/icons/chart-no-axes-column';
 	import MilestoneCheck from '#lib/milestone/MilestoneCheck.svelte';
@@ -246,7 +248,10 @@
 
 	// #28: steps — one-off tasks of a goal; a practice's step is its precondition («сначала»)
 	let stepsShowAll = $state(false);
-	const openStepsList = $derived(week?.steps ?? []);
+	// #30: the list also carries deeds done in the last day and a half — for «Сделано» on today
+	const openStepsList = $derived((week?.steps ?? []).filter((s) => !s.doneAt));
+	const localDay = (iso: string) => new Date(iso).toLocaleDateString('en-CA');
+	const doneDeedsToday = $derived((week?.steps ?? []).filter((s) => s.doneAt && localDay(s.doneAt) === viewDay && s.practiceId === null));
 	const stepsOfPractice = (pid: number) => openStepsList.filter((s) => s.practiceId === pid);
 	const stepOf = (p: PracticeView) => stepsOfPractice(p.id)[0];
 	const goalStepsToday = $derived(
@@ -261,11 +266,12 @@
 		return r.json();
 	}
 	async function stepDone(st: StepView) {
-		if (week?.steps) week.steps = week.steps.filter((x) => x.id !== st.id);
+		// the two-zone view keeps it struck through in «Сделано» until the day ends; the old one hides it
+		if (week?.steps) week.steps = zones ? week.steps.map((x) => (x.id === st.id ? { ...x, doneAt: new Date().toISOString() } : x)) : week.steps.filter((x) => x.id !== st.id);
 		if (!(await stepCall({ action: 'done', id: st.id }))) return load();
 		const where = st.practiceId ? (practices.find((x) => x.id === st.practiceId)?.title ?? st.goalTitle) : st.goalTitle;
 		flash = {
-			text: `Шаг сделан → ${where}`,
+			text: `Дело сделано → ${where}`,
 			goalId: st.goalId,
 			undo: async () => {
 				await stepCall({ action: 'undone', id: st.id });
@@ -275,6 +281,71 @@
 		clearTimeout(flashTimer);
 		flashTimer = setTimeout(() => (flash = null), 5000);
 	}
+	// ── #30 «Дела и навыки»: the two-zone view of «Сегодня» ──
+	const zones = $derived(appSettings.v['today.layout'] !== 'classic');
+	async function setLayout(v: 'zones' | 'classic') {
+		const r = await fetch('/api/app-settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'today.layout', value: v }) }).catch(() => undefined);
+		if (r?.ok) setAppSettings((await r.json()).values);
+		else problem = 'Не сохранилось: нет связи с сервером';
+	}
+	const isArea = (p: PracticeView) => p.goalKind === 'area';
+	type DeedRow = { kind: 'deed'; st: StepView } | { kind: 'first'; st: StepView; p: PracticeView } | { kind: 'area'; p: PracticeView };
+	// what goes to the deeds zone — the owner marks nothing: deeds whose day or deadline has come, the «сначала» step
+	// of a practice planned today, and the planned practices of spheres
+	const deedRows = $derived.by((): DeedRow[] => {
+		if (!week) return [];
+		const rows: DeedRow[] = [];
+		for (const st of openStepsList) if (deedToday(st, viewDay)) rows.push({ kind: 'deed', st });
+		for (const p of day.todo) {
+			if (isArea(p)) rows.push({ kind: 'area', p });
+			else if (stepOf(p)) rows.push({ kind: 'first', st: stepOf(p)!, p });
+		}
+		return rows;
+	});
+	const deedsDone = $derived([...doneDeedsToday.map((st) => ({ id: `s${st.id}`, title: st.title, where: st.goalTitle })), ...day.done.filter((d) => isArea(d.p)).map((d) => ({ id: `p${d.p.id}`, title: d.p.title, where: d.p.goalTitle }))]);
+	const skillsTodo = $derived(day.todo.filter((p) => !isArea(p)));
+	const skillsDone = $derived(day.done.filter((d) => !isArea(d.p)));
+	const skillsPlanned = $derived(skillsTodo.length + skillsDone.filter((d) => !d.bonus).length);
+	let deedsAll = $state(false);
+	// «+ дело»: the title, its sphere or goal (the last used first), for the day on screen
+	let deedTitle = $state('');
+	let deedGoal = $state<{ id: number; title: string } | null>(null);
+	let pickingGoal = $state(false);
+	onMount(() => {
+		try {
+			deedGoal = JSON.parse(localStorage.getItem('deed-last-goal') ?? 'null');
+		} catch {
+			/* private mode */
+		}
+	});
+	const goalTree = $derived(
+		buildTree(
+			[...new Map((week?.goals ?? []).map((g) => [g.categoryId, { id: g.categoryId, name: g.categoryName, color: g.color, sortOrder: g.categoryOrder, archivedAt: null }])).values()],
+			(week?.goals ?? []).map((g) => ({ id: g.id, title: g.title, categoryId: g.categoryId, sortOrder: g.sortOrder, archivedAt: null })),
+			[]
+		).filter((c) => c.goals.length)
+	);
+	function pickDeedGoal(g: { id: number; title: string }) {
+		deedGoal = { id: g.id, title: g.title };
+		pickingGoal = false;
+		try {
+			localStorage.setItem('deed-last-goal', JSON.stringify(deedGoal));
+		} catch {
+			/* not critical */
+		}
+	}
+	async function addDeed(e: SubmitEvent) {
+		e.preventDefault();
+		const t = deedTitle.trim();
+		if (!t) return;
+		if (!deedGoal) return (pickingGoal = true);
+		deedTitle = '';
+		if (await stepCall({ action: 'create', goalId: deedGoal.id, title: t, plannedDate: viewDay < today ? today : viewDay })) await load();
+	}
+	async function areaDone(p: PracticeView) {
+		await mark(p, viewDay, counts(amountOf(p.id, viewDay), p) ? 0 : p.normDose);
+	}
+
 	async function addStep(p: PracticeView, f: HTMLFormElement) {
 		const input = f.elements.namedItem('step') as HTMLInputElement;
 		const title = input.value.trim();
@@ -725,7 +796,11 @@
 			below={dayNav}
 			menu={[
 				{ label: 'Изменить план', icon: Pencil, href: `/plan?start=${start}&from=today` },
-				{ label: 'Все практики', icon: LayoutGrid, href: '/?tab=all&from=today' }
+				{ label: 'Все практики', icon: LayoutGrid, href: '/?tab=all&from=today' },
+				// #30: the two zones or the screen as before
+				zones
+					? { label: 'Вид: прежний', icon: Rows3, onclick: () => setLayout('classic') }
+					: { label: 'Вид: две зоны', icon: Rows3, onclick: () => setLayout('zones') }
 			]}
 		>
 			{#snippet actions()}
@@ -969,10 +1044,13 @@
 {/if}
 
 {#snippet todayScreen()}
-	{#if viewDay >= today && goalStepsToday.length}
+	{#if zones && viewDay >= today}
+		{@render deedsZone()}
+	{/if}
+	{#if !zones && viewDay >= today && goalStepsToday.length}
 		<!-- #28: steps of goals in focus, or with their day come — at most three, the rest behind «ещё N» -->
 		<section class="steps-today">
-			<h2 class="zone">Шаги</h2>
+			<h2 class="zone">Дела</h2>
 			<ul>
 				{#each stepsShowAll ? goalStepsToday : goalStepsToday.slice(0, appNum('today.steps_rows')) as st (st.id)}
 					<li>
@@ -1003,7 +1081,32 @@
 		<p class="empty-day">На {viewDay === today ? 'сегодня' : 'этот день'} ничего не запланировано</p>
 	{/if}
 
-	{#if day.todo.length}
+	{#if zones}
+		{#if skillsTodo.length || skillsDone.length}
+			<!-- #30: skills — practices of goals of growth, with the cube of the day -->
+			<h2 class="zone">Навыки · {skillsDone.filter((d) => !d.bonus).length} из {skillsPlanned}</h2>
+			{#if skillsTodo.length}
+				<ul class="cards" class:reorder bind:this={listEls.todo}>
+					{#each inOrder('todo', skillsTodo, (p) => p.id) as p (p.id)}
+						<li data-id={p.id} class:dragging={drag?.id === p.id} in:receive={{ key: p.id }} out:send={{ key: p.id }} animate:flip={{ duration: 180 }}>
+							{@render card(p, false, 'todo', skillsTodo.map((x) => x.id))}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+			{#if skillsDone.length}
+				<ul class="cards done-skills" class:reorder bind:this={listEls.done}>
+					{#each inOrder('done', skillsDone, (d) => d.p.id) as d (d.p.id)}
+						<li data-id={d.p.id} class:dragging={drag?.id === d.p.id} in:receive={{ key: d.p.id }} out:send={{ key: d.p.id }} animate:flip={{ duration: 180 }}>
+							{@render card(d.p, d.bonus, 'done', skillsDone.map((x) => x.p.id))}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		{/if}
+	{/if}
+
+	{#if !zones && day.todo.length}
 		<h2 class="zone">К выполнению</h2>
 		<ul class="cards" class:reorder bind:this={listEls.todo}>
 			{#each inOrder('todo', day.todo, (p) => p.id) as p (p.id)}
@@ -1014,7 +1117,7 @@
 		</ul>
 	{/if}
 
-	{#if day.done.length}
+	{#if !zones && day.done.length}
 		<h2 class="zone">Сделано</h2>
 		<ul class="cards" class:reorder bind:this={listEls.done}>
 			{#each inOrder('done', day.done, (d) => d.p.id) as d (d.p.id)}
@@ -1071,6 +1174,58 @@
 
 {/snippet}
 
+{#snippet deedsZone()}
+	{@const limit = appNum('today.deeds_rows')}
+	{@const rows = deedsAll ? deedRows : deedRows.slice(0, limit)}
+	<!-- #30: deeds — one-off deeds of any goal or sphere, the «сначала» step of a practice of the day, the sphere practices -->
+	<section class="deeds">
+		<h2 class="zone">Дела · {deedRows.length}</h2>
+		{#if deedRows.length || deedsDone.length}
+			<ul>
+				{#each rows as r (r.kind === 'area' ? `p${r.p.id}` : `s${r.st.id}`)}
+					<li>
+						{#if r.kind === 'area'}
+							<button class="round" aria-label="Сделано: {r.p.title}" onclick={() => areaDone(r.p)}></button>
+							<span class="dt">{r.p.title}</span>
+							<a class="obj dw" href="/settings/goal/{r.p.goalId}?from={tab}">{r.p.goalTitle}</a>
+						{:else}
+							<button class="round" aria-label="Сделано: {r.st.title}" onclick={() => stepDone(r.st)}></button>
+							<span class="dt">{r.st.title}</span>
+							{#if r.kind === 'first'}
+								<span class="dw">сначала · <a class="obj" href="/settings/practice/{r.p.id}?from={tab}">{r.p.title}</a></span>
+							{:else}
+								<a class="obj dw" href="/settings/goal/{r.st.goalId}?from={tab}"
+									>{r.st.goalTitle}{#if r.st.dueDate} · до {dayTitle(r.st.dueDate).toLowerCase()}{/if}</a
+								>
+							{/if}
+						{/if}
+					</li>
+				{/each}
+			</ul>
+			{#if !deedsAll && deedRows.length > limit}<button class="more-btn2" onclick={() => (deedsAll = true)}>ещё {deedRows.length - limit}</button>{/if}
+		{/if}
+		<form class="add-deed" onsubmit={addDeed}>
+			<input bind:value={deedTitle} placeholder="+ дело" aria-label="Новое дело" enterkeyhint="done" />
+			<button type="button" class="dgoal" onclick={() => (pickingGoal = true)}>{deedGoal ? deedGoal.title : 'куда?'}</button>
+		</form>
+		{#if deedsDone.length}
+			<p class="dsub">Сделано</p>
+			<ul class="ddone">
+				{#each deedsDone as d (d.id)}
+					<li><span class="dt">{d.title}</span><span class="dw">{d.where}</span></li>
+				{/each}
+			</ul>
+		{/if}
+	</section>
+	{#if pickingGoal}
+		<div class="backdrop" role="presentation" onclick={() => (pickingGoal = false)}></div>
+		<div class="sheet" role="dialog" aria-label="Куда дело">
+			<header><span class="st">Куда дело — сфера или цель</span><button class="done" onclick={() => (pickingGoal = false)}>Готово</button></header>
+			<div class="sbody"><PracticeTree tree={goalTree} storageKey="deed-goal-tree" mode="goal" onPickGoal={(g) => pickDeedGoal(g)} /></div>
+		</div>
+	{/if}
+{/snippet}
+
 {#snippet card(p: PracticeView, bonus: boolean, list: ListName, ids: number[])}
 	{@const planned = isPlanned(p.id, viewDay)}
 	{@const dayNote = planned ? dayNoteOf(p.id, viewDay) : null}
@@ -1088,6 +1243,7 @@
 		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
 		<div
 			class="card"
+			class:stripe={zones}
 			class:nobox={auto}
 			class:has-star={list === 'other' || list === 'tree'}
 			class:open={isOpen}
@@ -1102,7 +1258,29 @@
 				toggleCard(p.id);
 			}}
 		>
-			{#if !auto}
+			{#if zones && !auto}
+				<!-- #30: the cube of the day — empty, half (minimum), full (norm); a tap is the box's old logic (Spec 007 F) -->
+				<button
+					class="cube"
+					disabled={isFutureDay}
+					aria-pressed={counts(a, p)}
+					aria-label="{p.title}: {counts(a, p) ? 'снять отметку' : 'отметить норму'}"
+					onclick={(e) => {
+						e.stopPropagation();
+						mark(p, viewDay, counts(a, p) ? 0 : p.normDose);
+					}}
+					><svg viewBox="0 0 28 28" aria-hidden="true"
+						><rect class="cube-frame" x="2" y="2" width="24" height="24" rx="6" /><rect
+							class="cube-fill"
+							x="4"
+							width="20"
+							rx="4"
+							style:y="{dep >= 1 ? 4 : dep > 0 ? 14 : 24}px"
+							style:height="{dep >= 1 ? 20 : dep > 0 ? 10 : 0}px"
+						/></svg
+					></button
+				>
+			{:else if !auto}
 				<button
 					class="box box-btn"
 					disabled={isFutureDay}
@@ -1132,12 +1310,12 @@
 			<span class="dose" class:count={auto}
 				>{auto ? `${st.checked} из ${st.total}` : a && !counts(a, p) ? `${a} из ${p.normDose} ${p.unit}` : a ? `${a} ${p.unit}` : volCaption(p) || doseHint(p)}</span
 			>
-			{#if planned && stepOf(p)}
+			{#if planned && stepOf(p) && !zones}
 				{@const st0 = stepOf(p)!}
 				{@const more = stepsOfPractice(p.id).length - 1}
 				<!-- #28: a step of this practice — a precondition, first line on the card; it does not block the mark -->
 				<div class="cstep">
-					<input type="checkbox" aria-label="Шаг сделан: {st0.title}" onchange={(e) => { e.currentTarget.checked = false; stepDone(st0); }} />
+					<input type="checkbox" aria-label="Дело сделано: {st0.title}" onchange={(e) => { e.currentTarget.checked = false; stepDone(st0); }} />
 					<span class="first">сначала</span><span class="sttl">{st0.title}</span>
 					{#if more > 0}<a class="obj more-steps" href="/settings/goal/{p.goalId}?from={tab}">и ещё {more}</a>{/if}
 				</div>
@@ -1165,7 +1343,7 @@
 						</div>
 						{#if week?.volumes?.[p.id]}{@render volumeRow(p)}{/if}
 						<form class="vol-form" onsubmit={(e) => { e.preventDefault(); addStep(p, e.currentTarget); }}>
-							<input name="step" placeholder="+ Шаг для «{p.title}»" aria-label="Новый шаг практики" />
+							<input name="step" placeholder="+ Дело для «{p.title}»" aria-label="Новое дело практики" />
 						</form>
 						{#if qtyOpen === p.id}
 							<form
@@ -2327,5 +2505,167 @@
 		color: var(--text);
 		font-weight: 600;
 		cursor: pointer;
+	}
+
+	/* ── #30: the two zones ── */
+	.deeds {
+		margin: 4px 0 16px;
+	}
+	.deeds ul {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		background: var(--surface);
+		border-radius: 12px;
+		overflow: hidden;
+	}
+	.deeds li {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 2px 10px;
+		min-height: 48px;
+		padding: 6px 12px;
+	}
+	.deeds li + li {
+		border-top: 1px solid var(--line);
+	}
+	.round {
+		flex: none;
+		width: 24px;
+		height: 24px;
+		border: 2px solid var(--muted);
+		border-radius: 50%;
+		background: none;
+		cursor: pointer;
+	}
+	.dt {
+		flex: 1;
+		min-width: 0;
+		font-size: 16px;
+	}
+	.dw {
+		flex-basis: 100%;
+		padding-left: 34px;
+		font-size: 12px;
+		color: var(--muted);
+	}
+	.add-deed {
+		display: flex;
+		gap: 6px;
+		margin-top: 6px;
+	}
+	.add-deed input {
+		flex: 1;
+		min-width: 0;
+		min-height: 44px;
+		padding: 0 12px;
+		border: 1px dashed var(--line);
+		border-radius: 12px;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		font-size: 16px;
+	}
+	.dgoal {
+		max-width: 40%;
+		min-height: 44px;
+		padding: 0 10px;
+		border: 1px solid var(--line);
+		border-radius: 12px;
+		background: var(--surface);
+		color: var(--muted);
+		font: inherit;
+		font-size: 13px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+	.dsub {
+		margin: 10px 0 4px;
+		font-size: 13px;
+		color: var(--muted);
+	}
+	.ddone li .dt {
+		text-decoration: line-through;
+		color: var(--muted);
+	}
+	.ddone li .dw {
+		padding-left: 0;
+	}
+	.card.stripe {
+		border-left: 4px solid var(--c-light);
+	}
+	.cube {
+		flex: none;
+		width: 44px;
+		height: 44px;
+		margin: -8px 0 -8px -8px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+		background: none;
+		cursor: pointer;
+	}
+	.cube svg {
+		width: 28px;
+		height: 28px;
+	}
+	.cube-frame {
+		fill: none;
+		stroke: var(--c-light);
+		stroke-width: 2.5;
+	}
+	.cube-fill {
+		fill: var(--c-light);
+		transition:
+			y 0.35s ease-out,
+			height 0.35s ease-out;
+	}
+	.cube:disabled {
+		opacity: 0.4;
+	}
+	.backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 20;
+		background: rgb(0 0 0 / 0.35);
+	}
+	.sheet {
+		position: fixed;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 21;
+		max-width: 560px;
+		max-height: 80vh;
+		margin: 0 auto;
+		display: flex;
+		flex-direction: column;
+		padding: 8px 16px calc(env(safe-area-inset-bottom) + 12px);
+		background: var(--bg);
+		border-radius: 16px 16px 0 0;
+	}
+	.sheet header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		min-height: 44px;
+	}
+	.sheet .st {
+		font-weight: 700;
+	}
+	.sheet .done {
+		border: none;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.sbody {
+		overflow-y: auto;
 	}
 </style>

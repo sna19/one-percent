@@ -1,6 +1,6 @@
 import { error, json } from '@sveltejs/kit';
 import { getDb } from '#lib/server/db.js';
-import { createStep, deleteStep, goalSteps, orderSteps, setStepDone, updateStep } from '#lib/server/steps.js';
+import { createStep, deleteStep, goalSteps, orderSteps, practiceToDeed, setStepDone, updateStep } from '#lib/server/steps.js';
 import { InputError } from '#lib/server/settings.js';
 
 /** #28 — GET ?goalId= ; POST { action: create | update | done | undone | delete | order, … }. */
@@ -33,6 +33,8 @@ export async function POST({ request }) {
 			case 'order':
 				orderSteps(db, b.ids);
 				break;
+			case 'fromPractice':
+				return json({ ok: true, id: practiceToDeed(db, b.practiceId, b.goalId, b.plannedDate) });
 			default:
 				error(400, 'unknown action');
 		}

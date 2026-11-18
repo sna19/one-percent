@@ -34,6 +34,9 @@
 	const g0 = untrack(() => data.goal);
 
 	let title = $state(g0.title);
+	// #30: a goal of growth or a sphere of life (Дом, Машина, Семья) — no milestones, no ★ focus
+	let kind = $state<'growth' | 'area'>((g0 as { kind?: 'growth' | 'area' }).kind ?? 'growth');
+	const area = $derived(kind === 'area');
 	let categoryId = $state(g0.categoryId);
 	let direction = $state(g0.direction);
 	// Spec 009: the old text field became a milestone (migration 0008); it is sent unchanged
@@ -98,7 +101,7 @@
 		if (r?.ok) focusIds = next;
 		else focusMsg = (await r?.json().catch(() => null))?.message ?? 'Нет связи с сервером';
 	}
-	const changed = () => saver.save({ id: g0.id, title, categoryId, direction, milestoneText, imageKind, imageValue });
+	const changed = () => saver.save({ id: g0.id, title, categoryId, direction, milestoneText, imageKind, imageValue, kind });
 	const catColor = $derived(data.categories.find((c) => c.id === categoryId)?.color ?? 'slate');
 
 	// Spec 009 D — the milestone blocks, loaded with the device's today
@@ -206,7 +209,7 @@
 			<span>Образ — изменить</span>
 		</button>
 		<!-- #26: ★ — this goal is in the week's focus; ☆ puts it there -->
-		{#if focusIds}
+		{#if focusIds && !area}
 			<button class="focus-star" class:on={inFocus} aria-pressed={inFocus} onclick={toggleFocus}
 				><Star size={20} fill={inFocus ? 'currentColor' : 'none'} />{inFocus ? 'В фокусе' : 'В фокус'}</button
 			>
@@ -230,6 +233,15 @@
 	{/if}
 
 	<div class="card">
+		<div class="kind" role="radiogroup" aria-label="Вид">
+			<button role="radio" aria-checked={!area} class:on={!area} onclick={() => ((kind = 'growth'), changed())}>Цель роста</button>
+			<button role="radio" aria-checked={area} class:on={area} onclick={() => ((kind = 'area'), changed())}>Сфера жизни</button>
+		</div>
+		<p class="kind-hint">
+			{area
+				? 'Сфера — Дом, Машина, Семья: её дела и повторяющиеся практики идут на «Сегодня» первыми, простыми строками. Без майлстонов и фокуса.'
+				: 'Цель роста: её практики — навыки с минимумом и нормой, майлстоны и ★ фокус недели.'}
+		</p>
 		<label>Название <input bind:value={title} oninput={changed} /></label>
 		<label
 			>Категория
@@ -238,12 +250,12 @@
 			</select>
 		</label>
 		<div class="field">
-			<span class="flabel">Направление — зачем</span>
+			<span class="flabel">Направление — зачем{area ? ' (необязательно)' : ''}</span>
 			<!-- #23: the same editor as notes; plain text written before opens as paragraphs -->
 			<RichEditor
 				grow
 				label="Зачем"
-				placeholder="Зачем тебе эта цель?"
+				placeholder={area ? 'Что сюда входит — по желанию' : 'Зачем тебе эта цель?'}
 				doc={richDoc(direction)}
 				onChange={(d) => {
 					direction = d ? JSON.stringify(d) : '';
@@ -253,6 +265,7 @@
 		</div>
 	</div>
 
+	{#if !area}
 	<h2 class="with-icon"><Flag size={14} />Майлстон</h2>
 	{#if editing}
 		<MilestoneForm
@@ -319,12 +332,13 @@
 			<button class="primary" onclick={() => (editing = 'new')}>Новый майлстон</button>
 		</div>
 	{/if}
+	{/if}
 
-	<!-- #28: the goal's steps stand above its practices -->
-	<h2>Шаги</h2>
+	<!-- #28 / #30: the goal's deeds stand above its practices -->
+	<h2>Дела</h2>
 	<StepList goalId={g0.id} practices={practices.map((p) => ({ id: p.id, title: p.title }))} />
 
-	<h2>Практики цели</h2>
+	<h2>{area ? 'Повторяющиеся дела — практики сферы' : 'Практики цели'}</h2>
 	<ul class="list">
 		{#each practices as p (p.id)}
 			<li class="prow">
@@ -561,6 +575,34 @@
 	}
 	.sheet-body {
 		overflow-y: auto;
+	}
+	.kind {
+		display: flex;
+		gap: 4px;
+		padding: 3px;
+		border-radius: 10px;
+		background: var(--bg);
+	}
+	.kind button {
+		flex: 1;
+		min-height: 36px;
+		border: none;
+		border-radius: 8px;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		font-size: 14px;
+		cursor: pointer;
+	}
+	.kind button.on {
+		background: var(--surface);
+		box-shadow: 0 1px 3px rgb(0 0 0 / 0.15);
+		font-weight: 600;
+	}
+	.kind-hint {
+		margin: -4px 0 0;
+		font-size: 13px;
+		color: var(--muted);
 	}
 	.image-row {
 		display: flex;

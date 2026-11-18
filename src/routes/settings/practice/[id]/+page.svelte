@@ -13,6 +13,7 @@
 	import { firstLine, type NoteDoc } from '#lib/note.js';
 	import { parseDays } from '#lib/days.js';
 	import Archive from '@lucide/svelte/icons/archive';
+	import ListChecks from '@lucide/svelte/icons/list-checks';
 	import FilePen from '@lucide/svelte/icons/file-pen';
 	import type { PracticeView } from '#lib/types.js';
 	import type { PageProps } from './$types';
@@ -116,6 +117,22 @@
 		goto('/settings');
 	}
 
+	// #30 «Превратить в дело»: a one-off that was kept as a practice (a yearly date) becomes a deed of a sphere or goal
+	let toDeed = $state(false);
+	let deedError = $state<string | null>(null);
+	const deedTree = $derived(buildTree(data.categories, data.goals, []).filter((c) => c.goals.length));
+	async function makeDeed(goalId: number, goalTitle: string) {
+		if (!confirm(`«${title}» станет делом в «${goalTitle}», а практика уйдёт в архив с историей. Продолжить?`)) return;
+		await saver.flush();
+		const r = await fetch('/api/steps', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ action: 'fromPractice', practiceId: p0.id, goalId, plannedDate: todayStr() })
+		}).catch(() => undefined);
+		if (!r?.ok) return (deedError = (await r?.json().catch(() => null))?.message ?? 'Нет связи с сервером');
+		goto(`/settings/goal/${goalId}`);
+	}
+
 	const WD = [1, 2, 3, 4, 5, 6, 0];
 	const NAMES = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 	let pickingGoal = $state(false);
@@ -127,7 +144,10 @@
 <svelte:head><title>{title} · Настройки</title></svelte:head>
 
 <main>
-	<TopBar help="practice" title={title || 'Практика'} back={backLink} menu={[{ label: 'В архив', icon: Archive, onclick: archive }]} />
+	<TopBar help="practice" title={title || 'Практика'} back={backLink} menu={[
+			{ label: 'Превратить в дело', icon: ListChecks, onclick: () => (toDeed = true) },
+			{ label: 'В архив', icon: Archive, onclick: archive }
+		]} />
 
 	<p class="status" aria-live="polite">
 		{saver.state.status === 'saving' ? 'Сохраняю…' : saver.state.status === 'saved' ? 'Сохранено' : saver.state.status === 'error' ? saver.state.message : ''}
@@ -212,6 +232,16 @@
 	</div>
 </main>
 
+{#if toDeed}
+	<div class="backdrop" role="presentation" onclick={() => (toDeed = false)}></div>
+	<div class="sheet" role="dialog" aria-label="Превратить в дело">
+		<header><span class="st">Превратить в дело — куда?</span><button class="done" onclick={() => (toDeed = false)}>Отмена</button></header>
+		<p class="hint">Для одноразового, что жило практикой: название и заметка станут делом выбранной сферы или цели (на сегодня), практика уйдёт в архив.</p>
+		{#if deedError}<p class="hint" role="alert">{deedError}</p>{/if}
+		<div class="sbody"><PracticeTree tree={deedTree} storageKey="to-deed-tree" mode="goal" onPickGoal={(g) => makeDeed(g.id, g.title)} /></div>
+	</div>
+{/if}
+
 {#if editing}
 	<NoteSheet
 		p={asView}
@@ -227,6 +257,52 @@
 {/if}
 
 <style>
+	.backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 20;
+		background: rgb(0 0 0 / 0.35);
+	}
+	.sheet {
+		position: fixed;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 21;
+		max-width: 560px;
+		max-height: 80vh;
+		margin: 0 auto;
+		display: flex;
+		flex-direction: column;
+		padding: 8px 16px calc(env(safe-area-inset-bottom) + 12px);
+		background: var(--bg);
+		border-radius: 16px 16px 0 0;
+	}
+	.sheet header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		min-height: 44px;
+	}
+	.st {
+		font-weight: 700;
+	}
+	.sheet .done {
+		border: none;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.hint {
+		margin: 0 0 8px;
+		font-size: 13px;
+		color: var(--muted);
+	}
+	.sbody {
+		overflow-y: auto;
+	}
 	main {
 		max-width: 560px;
 		margin: 0 auto;

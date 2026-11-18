@@ -9,6 +9,8 @@ export interface PracticeView {
 	color: string;
 	goalId: number;
 	goalTitle: string;
+	/** #30: growth — its practices are skills; area — a sphere of life, its practices are everyday deeds */
+	goalKind?: 'growth' | 'area';
 	/** for the tree in «Сделать что-то ещё» (#12): the goal's and category's place in the settings order */
 	goalOrder: number;
 	/** Spec 013: the goal's picture, for its small label in rows */
@@ -76,4 +78,6 @@ export interface WeekData {
 	volumes?: Record<number, import('./server/volume.js').VolumeView>;
 	/** #28: open steps of active goals */
 	steps?: import('./steps.js').StepView[];
+	/** #30: live goals and spheres with their categories */
+	goals?: { id: number; title: string; kind: string; categoryId: number; sortOrder: number; categoryName: string; color: string; categoryOrder: number }[];
 }

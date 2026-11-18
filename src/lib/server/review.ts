@@ -38,7 +38,8 @@ export function computeReview(db: Db, start: DateStr, today: DateStr): WeeklyRev
 		.select({ id: goals.id, title: goals.title, categoryId: goals.categoryId, sortOrder: goals.sortOrder, color: categories.color })
 		.from(goals)
 		.innerJoin(categories, eq(categories.id, goals.categoryId))
-		.where(and(isNull(goals.archivedAt), eq(goals.status, 'active'), isNull(categories.archivedAt)))
+		// #30: spheres of life are everyday business, not growth: they stay out of the weekly review
+		.where(and(isNull(goals.archivedAt), eq(goals.status, 'active'), eq(goals.kind, 'growth'), isNull(categories.archivedAt)))
 		.orderBy(asc(categories.sortOrder), asc(goals.sortOrder), asc(goals.id))
 		.all();
 	const cats = db.select().from(categories).where(isNull(categories.archivedAt)).orderBy(asc(categories.sortOrder), asc(categories.id)).all();
@@ -286,8 +287,10 @@ export function setFocus(db: Db, start: DateStr, goalIds: unknown, today?: DateS
 		plan = db.select().from(weekPlans).where(eq(weekPlans.weekStart, start)).get();
 	}
 	if (!plan) throw new InputError('У недели нет плана');
-	const active = new Set(db.select({ id: goals.id }).from(goals).where(and(isNull(goals.archivedAt), eq(goals.status, 'active'))).all().map((g) => g.id));
-	if (!ids.every((g) => active.has(g))) throw new InputError('В фокус — только активные цели');
+	const active = new Set(
+		db.select({ id: goals.id }).from(goals).where(and(isNull(goals.archivedAt), eq(goals.status, 'active'), eq(goals.kind, 'growth'))).all().map((g) => g.id)
+	);
+	if (!ids.every((g) => active.has(g))) throw new InputError('В фокус — только активные цели роста');
 	db.update(weekPlans).set({ focusGoalIds: ids.length ? ids.join(',') : null }).where(eq(weekPlans.id, plan.id)).run();
 }
 

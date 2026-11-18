@@ -20,6 +20,7 @@ export function loadWeek(db: Db, start: DateStr, today: DateStr): WeekData {
 			color: categories.color,
 			goalId: goals.id,
 			goalTitle: goals.title,
+			goalKind: goals.kind,
 			goalOrder: goals.sortOrder,
 			goalImageKind: goals.imageKind,
 			goalImageValue: goals.imageValue,
@@ -88,7 +89,23 @@ export function loadWeek(db: Db, start: DateStr, today: DateStr): WeekData {
 		milestones: openMilestones(db, today),
 		reviewPending: reviewPending(db, today),
 		volumes: volumes(db, today),
-		steps: openSteps(db)
+		steps: openSteps(db),
+		// #30: every live goal and sphere with its category — for «+ дело» (a sphere without practices too)
+		goals: db
+			.select({
+				id: goals.id,
+				title: goals.title,
+				kind: goals.kind,
+				categoryId: goals.categoryId,
+				sortOrder: goals.sortOrder,
+				categoryName: categories.name,
+				color: categories.color,
+				categoryOrder: categories.sortOrder
+			})
+			.from(goals)
+			.innerJoin(categories, eq(categories.id, goals.categoryId))
+			.where(and(isNull(goals.archivedAt), isNull(categories.archivedAt)))
+			.all()
 	};
 }
 

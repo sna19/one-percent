@@ -68,7 +68,9 @@ export function saveGoal(db: Db, f: FormData) {
 		// #23: a formatted «Зачем» is a note document — the note's limit, checked again in richText
 		direction: richText(str(f, 'direction', false, NOTE_MAX)),
 		milestoneText: str(f, 'milestoneText', false),
-		...goalImage(f)
+		...goalImage(f),
+		// #30: a goal of growth or a sphere of life; the form may leave it out (then it does not change)
+		...(f.get('kind') === 'area' || f.get('kind') === 'growth' ? { kind: f.get('kind') as 'growth' | 'area' } : {})
 	};
 	const gid = id(f);
 	if (gid) db.update(goals).set(values).where(eq(goals.id, gid)).run();

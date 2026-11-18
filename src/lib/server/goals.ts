@@ -1,7 +1,7 @@
 import { and, asc, eq, gte, isNull, lte } from 'drizzle-orm';
 import { addDays, weekDays, weekStart, type DateStr } from '../dates.js';
 import type { Db } from './db.js';
-import { categories, entries, goals, milestones, planItems, planTemplates, practices, volumesDone, weekPlans } from './schema.js';
+import { categories, entries, goals, milestones, planItems, planTemplates, practices, steps, volumesDone, weekPlans } from './schema.js';
 import { progressUntil } from './milestones.js';
 import { richFirst } from '../note.js';
 
@@ -51,6 +51,8 @@ export interface Gallery {
 	template: string | null;
 	/** «Пройденный путь»: archived goals, newest first */
 	path: GalleryGoal[];
+	/** #30: spheres of life — a compact block at the bottom, with their open deeds */
+	areas: { id: number; title: string; imageKind: 'icon' | 'emoji' | 'text'; imageValue: string; color: string; open: number }[];
 }
 
 export function gallery(db: Db, today: DateStr): Gallery {
@@ -144,13 +146,19 @@ export function gallery(db: Db, today: DateStr): Gallery {
 		return `${r(Math.min(pos, p.volumeTotal!))} / ${r(p.volumeTotal!)} ${p.unit}`;
 	}
 
-	const active = all.filter((g) => !g.archivedAt && g.status === 'active');
+	const live = all.filter((g) => !g.archivedAt && g.status === 'active');
+	const active = live.filter((g) => g.kind !== 'area');
+	const openDeeds = new Map<number, number>();
+	for (const s of db.select({ g: steps.goalId }).from(steps).where(isNull(steps.doneAt)).all()) openDeeds.set(s.g, (openDeeds.get(s.g) ?? 0) + 1);
 	return {
+		areas: live
+			.filter((g) => g.kind === 'area')
+			.map((g) => ({ id: g.id, title: g.title, imageKind: g.imageKind, imageValue: g.imageValue, color: catColor.get(g.categoryId) ?? 'slate', open: openDeeds.get(g.id) ?? 0 })),
 		focus: focusIds.filter((id) => active.some((g) => g.id === id)),
 		template,
 		categories: cats.map((c) => ({ id: c.id, name: c.name, color: c.color, goals: active.filter((g) => g.categoryId === c.id).map(card) })).filter((c) => c.goals.length),
 		path: all
-			.filter((g) => g.archivedAt)
+			.filter((g) => g.archivedAt && g.kind !== 'area')
 			.sort((a, b) => (b.archivedAt ?? '').localeCompare(a.archivedAt ?? ''))
 			.map(card)
 	};

@@ -98,6 +98,6 @@ describe('inbox (Spec 008)', () => {
 		const st = goalSteps(db, g.id).open[0];
 		expect(st.title).toBe('Настроить пианино');
 		expect(JSON.stringify(st.note)).toContain('настройщику');
-		expect(listInbox(db).history[0].target).toBe(`Шаг цели: ${g.title}`);
+		expect(listInbox(db).history[0].target).toBe(`Дело: ${g.title}`);
 	});
 });

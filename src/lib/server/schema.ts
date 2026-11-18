@@ -29,6 +29,11 @@ export const goals = sqliteTable('goals', {
 	imageValue: text('image_value').notNull().default(''),
 	/** v0.1 uses only 'active'; other statuses come with later specs. */
 	status: text('status').notNull().default('active'),
+	/**
+	 * #30: growth — a goal of growth (practices are skills, milestones, ★ focus); area — a sphere of life (Дом,
+	 * Машина, Семья): its practices and one-off deeds are everyday business, no milestones, no focus.
+	 */
+	kind: text('kind', { enum: ['growth', 'area'] }).notNull().default('growth'),
 	sortOrder: integer('sort_order').notNull().default(0),
 	archivedAt: text('archived_at'),
 	createdAt: createdAt()
@@ -247,6 +252,8 @@ export const steps = sqliteTable('steps', {
 	title: text('title').notNull(),
 	/** a day for it, optional; it shows on «Сегодня» from that day */
 	plannedDate: text('planned_date'),
+	/** #30: a deadline, optional («до пт»): it shows on «Сегодня» two days before */
+	dueDate: text('due_date'),
 	/** note document (Tiptap JSON), optional */
 	note: text('note'),
 	sortOrder: integer('sort_order').notNull().default(0),

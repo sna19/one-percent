@@ -114,7 +114,7 @@
 		day: 'В заметку дня',
 		goal: 'Новая практика: цель',
 		category: 'Новая цель: категория',
-		step: 'Шаг цели'
+		step: 'Дело'
 	};
 </script>
 
@@ -169,7 +169,7 @@
 					<li><button disabled={busy} onclick={() => (step = 'practice')}><FilePen size={20} />В заметку практики</button></li>
 					<li><button disabled={busy} onclick={() => (step = 'day')}><DayIcon day={Number(today.slice(8))} size={20} />В заметку дня</button></li>
 					<li><button disabled={busy} onclick={() => (step = 'goal')}><Plus size={20} />Новая практика</button></li>
-					<li><button disabled={busy} onclick={() => (step = 'step')}><ListChecks size={20} />Шаг цели</button></li>
+					<li><button disabled={busy} onclick={() => (step = 'step')}><ListChecks size={20} />→ Дело</button></li>
 					<li><button disabled={busy} onclick={() => (step = 'category')}><Target size={20} />Новая цель</button></li>
 					<li><button disabled={busy} onclick={() => close2('done')}><Check size={20} />Сделано</button></li>
 				{/if}
@@ -195,8 +195,8 @@
 			{/if}
 			{@render practiceTree(toDay, true)}
 		{:else if step === 'step'}
-			<p class="muted">Одноразовая задача цели: название — первая строка записи, остальное — заметка шага.</p>
-			<PracticeTree tree={goalTree} storageKey="inbox-step-tree" mode="goal" onPickGoal={(g) => !busy && run({ action: 'step', goalId: g.id }, `Шаг цели: ${g.title}`)} />
+			<p class="muted">Одноразовое дело сферы или цели: название — первая строка записи, остальное — заметка. Выберите, куда оно относится.</p>
+			<PracticeTree tree={goalTree} storageKey="inbox-step-tree" mode="goal" onPickGoal={(g) => !busy && run({ action: 'step', goalId: g.id }, `Дело: ${g.title}`)} />
 		{:else if step === 'goal'}
 			<p class="muted">Название — первая строка записи, остальное — в заметку «Всегда».</p>
 			<PracticeTree tree={goalTree} storageKey="inbox-goal-tree" mode="goal" onPickGoal={(g) => !busy && newPractice(g.id)} />

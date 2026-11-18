@@ -184,7 +184,7 @@ export function toStep(db: Db, id: number, goalId: number): number {
 	db.transaction((tx) => {
 		const t = tx as unknown as Db;
 		sid = createStep(t, { goalId, title: title.slice(0, 300), note: rest ? plainToDoc(rest) : null });
-		close(t, id, 'processed', `Шаг цели: ${g.title}`);
+		close(t, id, 'processed', `Дело: ${g.title}`);
 	});
 	return sid;
 }

@@ -257,6 +257,23 @@
 					</ul>
 				</section>
 			{/if}
+			{#if g.areas?.length}
+				<!-- #30: spheres of life — compact, at the bottom, with their open deeds -->
+				<section>
+					<h2>Сферы</h2>
+					<ul class="rows">
+						{#each g.areas as x (x.id)}
+							<li class="row">
+								<a class="obj rlink" href="/settings/goal/{x.id}?from=goals">
+									<GoalImage kind={x.imageKind} value={x.imageValue} color={x.color} title={x.title} size={26} soft />
+									<span class="rt">{x.title}</span>
+									<span class="vol">{x.open ? `дел ${x.open}` : 'дел нет'}</span>
+								</a>
+							</li>
+						{/each}
+					</ul>
+				</section>
+			{/if}
 			<!-- #27: «Все практики» left the tab bar; it is also here, at the end -->
 			<a class="obj allrow" href="/?tab=all&from=goals"><LayoutGrid size={18} />Все практики<ChevronRight size={18} /></a>
 		{/if}

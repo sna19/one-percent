@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNotNull, isNull, max } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNotNull, isNull, max, or } from 'drizzle-orm';
 import { isDateStr } from '../dates.js';
 import { isEmptyNote, isNoteDoc, NOTE_MAX, sanitizeLinks } from '../note.js';
 import type { StepView } from '../steps.js';
@@ -6,15 +6,22 @@ import type { Db } from './db.js';
 import { goals, practices, steps } from './schema.js';
 import { InputError } from './settings.js';
 
-/** #28 — steps: one-off tasks of a goal; «нет бесхозных задач» — a step always has its goal. */
+/**
+ * #28 — steps: one-off tasks of a goal; «нет бесхозных задач» — a step always has its goal.
+ * #30: a step is a «дело»: of a goal of growth or of a sphere of life; it may have a deadline.
+ */
 
-const view = (r: typeof steps.$inferSelect & { goalTitle: string }): StepView => ({
+const view = (r: typeof steps.$inferSelect & { goalTitle: string; goalKind: string; goalImageKind: string; goalImageValue: string }): StepView => ({
 	id: r.id,
 	goalId: r.goalId,
 	goalTitle: r.goalTitle,
+	goalKind: r.goalKind,
+	goalImageKind: r.goalImageKind,
+	goalImageValue: r.goalImageValue,
 	practiceId: r.practiceId,
 	title: r.title,
 	plannedDate: r.plannedDate,
+	dueDate: r.dueDate,
 	note: r.note ? JSON.parse(r.note) : null,
 	sortOrder: r.sortOrder,
 	createdAt: r.createdAt,
@@ -29,20 +36,28 @@ function select(db: Db) {
 			practiceId: steps.practiceId,
 			title: steps.title,
 			plannedDate: steps.plannedDate,
+			dueDate: steps.dueDate,
 			note: steps.note,
 			sortOrder: steps.sortOrder,
 			createdAt: steps.createdAt,
 			doneAt: steps.doneAt,
-			goalTitle: goals.title
+			goalTitle: goals.title,
+			goalKind: goals.kind,
+			goalImageKind: goals.imageKind,
+			goalImageValue: goals.imageValue
 		})
 		.from(steps)
 		.innerJoin(goals, eq(goals.id, steps.goalId));
 }
 
-/** Open steps of active goals — for «Сегодня» and the cards. */
-export function openSteps(db: Db): StepView[] {
+/**
+ * Open steps of active goals — for «Сегодня» and the cards; #30: and those done in the last day and a half, so that
+ * «Сделано» shows today's deeds struck through until the day ends (the device picks its own today).
+ */
+export function openSteps(db: Db, now = new Date()): StepView[] {
+	const since = new Date(now.getTime() - 36 * 3600 * 1000).toISOString();
 	return select(db)
-		.where(and(isNull(steps.doneAt), isNull(goals.archivedAt)))
+		.where(and(or(isNull(steps.doneAt), gte(steps.doneAt, since)), isNull(goals.archivedAt)))
 		.orderBy(asc(steps.goalId), asc(steps.sortOrder), asc(steps.id))
 		.all()
 		.map(view);
@@ -58,8 +73,8 @@ export function goalSteps(db: Db, goalId: number) {
 
 const title = (t: unknown) => {
 	const v = typeof t === 'string' ? t.trim() : '';
-	if (!v) throw new InputError('Пустой шаг');
-	if (v.length > 300) throw new InputError('Шаг — коротко, до 300 символов');
+	if (!v) throw new InputError('Пустое дело');
+	if (v.length > 300) throw new InputError('Дело — коротко, до 300 символов');
 	return v;
 };
 
@@ -70,14 +85,31 @@ function checkPractice(db: Db, goalId: number, practiceId: unknown): number | nu
 	return p.id;
 }
 
-export function createStep(db: Db, b: { goalId: unknown; practiceId?: unknown; title: unknown; note?: unknown }): number {
+const dateOrNull = (v: unknown) => {
+	if (v === null || v === undefined || v === '') return null;
+	if (!isDateStr(v)) throw new InputError('Неверная дата');
+	return v as string;
+};
+
+export function createStep(
+	db: Db,
+	b: { goalId: unknown; practiceId?: unknown; title: unknown; note?: unknown; plannedDate?: unknown; dueDate?: unknown }
+): number {
 	const goalId = Number(b.goalId);
-	if (!db.select({ id: goals.id }).from(goals).where(eq(goals.id, goalId)).get()) throw new InputError('Цель не найдена');
+	if (!db.select({ id: goals.id }).from(goals).where(eq(goals.id, goalId)).get()) throw new InputError('Цель или сфера не найдена');
 	const practiceId = checkPractice(db, goalId, b.practiceId);
 	const last = db.select({ m: max(steps.sortOrder) }).from(steps).where(eq(steps.goalId, goalId)).get()?.m ?? 0;
 	const [s] = db
 		.insert(steps)
-		.values({ goalId, practiceId, title: title(b.title), note: noteJson(b.note), sortOrder: last + 1 })
+		.values({
+			goalId,
+			practiceId,
+			title: title(b.title),
+			note: noteJson(b.note),
+			plannedDate: dateOrNull(b.plannedDate),
+			dueDate: dateOrNull(b.dueDate),
+			sortOrder: last + 1
+		})
 		.returning()
 		.all();
 	return s.id;
@@ -95,7 +127,7 @@ function noteJson(n: unknown): string | null {
 
 function get(db: Db, id: number) {
 	const s = db.select().from(steps).where(eq(steps.id, id)).get();
-	if (!s) throw new InputError('Шаг не найден');
+	if (!s) throw new InputError('Дело не найдено');
 	return s;
 }
 
@@ -105,9 +137,14 @@ export function updateStep(db: Db, id: number, b: Record<string, unknown>) {
 	const set: Partial<typeof steps.$inferInsert> = {};
 	if ('title' in b) set.title = title(b.title);
 	if ('practiceId' in b) set.practiceId = checkPractice(db, s.goalId, b.practiceId);
-	if ('plannedDate' in b) {
-		if (b.plannedDate !== null && b.plannedDate !== '' && !isDateStr(b.plannedDate)) throw new InputError('Неверная дата');
-		set.plannedDate = (b.plannedDate as string) || null;
+	if ('plannedDate' in b) set.plannedDate = dateOrNull(b.plannedDate);
+	if ('dueDate' in b) set.dueDate = dateOrNull(b.dueDate);
+	// a deed moves to another goal or sphere; its practice link goes with the old goal
+	if ('goalId' in b && Number(b.goalId) !== s.goalId) {
+		const g = db.select({ id: goals.id }).from(goals).where(eq(goals.id, Number(b.goalId))).get();
+		if (!g) throw new InputError('Цель или сфера не найдена');
+		set.goalId = g.id;
+		set.practiceId = null;
 	}
 	if ('note' in b) set.note = noteJson(b.note);
 	db.update(steps).set(set).where(eq(steps.id, id)).run();
@@ -126,6 +163,25 @@ export function deleteStep(db: Db, id: number) {
 }
 
 export function orderSteps(db: Db, ids: unknown) {
-	if (!Array.isArray(ids) || !ids.every(Number.isInteger)) throw new InputError('Ожидается список шагов');
+	if (!Array.isArray(ids) || !ids.every(Number.isInteger)) throw new InputError('Ожидается список дел');
 	db.transaction((tx) => ids.forEach((id, i) => tx.update(steps).set({ sortOrder: i + 1 }).where(eq(steps.id, id as number)).run()));
+}
+
+/**
+ * #30 «Превратить в дело»: a practice that is really a one-off (a yearly date, a repair) becomes a deed of a sphere
+ * or goal — its title and note go with it; the practice goes to the archive with its history.
+ */
+export function practiceToDeed(db: Db, practiceId: unknown, goalId: unknown, plannedDate?: unknown): number {
+	const p = db.select().from(practices).where(eq(practices.id, Number(practiceId))).get();
+	if (!p || p.archivedAt) throw new InputError('Практика не найдена');
+	return db.transaction((tx) => {
+		const id = createStep(tx as unknown as Db, {
+			goalId,
+			title: p.title,
+			note: p.note ? JSON.parse(p.note) : null,
+			plannedDate
+		});
+		tx.update(practices).set({ archivedAt: new Date().toISOString() }).where(eq(practices.id, p.id)).run();
+		return id;
+	});
 }

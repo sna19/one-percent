@@ -8,7 +8,7 @@
 	import { dayTitle } from './today.js';
 
 	/**
-	 * #28 — a goal's steps on its screen: open ones (box, ≡ to reorder, a tap edits), «+ Шаг» one line at a
+	 * #28 / #30 — a goal's deeds (steps) on its screen: open ones (box, ≡ to reorder, a tap edits), «+ Шаг» one line at a
 	 * time, and the done ones in the goal's «Пройденный путь» with «Вернуть». A step is one box: no dose.
 	 */
 	interface Props {
@@ -63,7 +63,7 @@
 		await post({ action: 'update', id: editing.id, fields });
 	}
 	async function remove() {
-		if (!editing || !confirm(`Убрать шаг «${editing.title}»?`)) return;
+		if (!editing || !confirm(`Убрать дело «${editing.title}»?`)) return;
 		const id = editing.id;
 		editing = null;
 		if (await post({ action: 'delete', id })) await load();
@@ -98,9 +98,9 @@
 					<input type="checkbox" aria-label="Сделано: {s.title}" onchange={(e) => { e.currentTarget.checked = false; check(s); }} />
 					<button class="title" onclick={() => (editing = { ...s })}>
 						<span>{s.title}</span>
-						{#if s.practiceId || s.plannedDate || age(s) >= appNum('stale_days')}
+						{#if s.practiceId || s.plannedDate || s.dueDate || age(s) >= appNum('stale_days')}
 							<small
-								>{[pName(s.practiceId) ? `сначала · ${pName(s.practiceId)}` : '', s.plannedDate ? dayTitle(s.plannedDate) : '']
+								>{[pName(s.practiceId) ? `сначала · ${pName(s.practiceId)}` : '', s.plannedDate ? dayTitle(s.plannedDate) : '', s.dueDate ? `до ${dayTitle(s.dueDate).toLowerCase()}` : '']
 									.filter(Boolean)
 									.join(' · ')}{#if age(s) >= appNum('stale_days')}<span class="stale">{Math.floor(age(s) / 7)} нед</span>{/if}</small
 							>
@@ -112,13 +112,13 @@
 		</ul>
 	{/if}
 	<form class="add" onsubmit={add}>
-		<input bind:value={draft} placeholder="+ Шаг" aria-label="Новый шаг" enterkeyhint="next" />
+		<input bind:value={draft} placeholder="+ Дело" aria-label="Новое дело" enterkeyhint="next" />
 	</form>
 	{#if error}<p class="err" role="alert">{error}</p>{/if}
 
 	{#if done.length}
 		<details class="path">
-			<summary>Пройденный путь · шаги {done.length}</summary>
+			<summary>Пройденный путь · дела {done.length}</summary>
 			<ul class="list">
 				{#each done as s (s.id)}
 					<li class="done">
@@ -134,23 +134,24 @@
 {#if editing}
 	{@const e = editing}
 	<div class="backdrop" role="presentation" onclick={closeEdit}></div>
-	<div class="sheet" role="dialog" aria-label="Шаг">
-		<header><span class="st">Шаг</span><button class="donebtn" onclick={closeEdit}>Готово</button></header>
+	<div class="sheet" role="dialog" aria-label="Дело">
+		<header><span class="st">Дело</span><button class="donebtn" onclick={closeEdit}>Готово</button></header>
 		<div class="body">
 			<label>Что сделать <input value={e.title} onchange={(ev) => saveEdit({ title: ev.currentTarget.value })} /></label>
 			<label
 				>Часть практики — «сначала»
 				<select value={e.practiceId ?? ''} onchange={(ev) => saveEdit({ practiceId: ev.currentTarget.value ? Number(ev.currentTarget.value) : null })}>
-					<option value="">— шаг цели —</option>
+					<option value="">— дело само по себе —</option>
 					{#each practices as p (p.id)}<option value={p.id}>{p.title}</option>{/each}
 				</select>
 			</label>
-			<label>День (необязательно) <input type="date" value={e.plannedDate ?? ''} onchange={(ev) => saveEdit({ plannedDate: ev.currentTarget.value || null })} /></label>
+			<label>Когда делаю (необязательно) <input type="date" value={e.plannedDate ?? ''} onchange={(ev) => saveEdit({ plannedDate: ev.currentTarget.value || null })} /></label>
+			<label>Срок — до (необязательно) <input type="date" value={e.dueDate ?? ''} onchange={(ev) => saveEdit({ dueDate: ev.currentTarget.value || null })} /></label>
 			<div class="field">
 				<span>Заметка</span>
-				<RichEditor grow label="Заметка шага" doc={e.note} onChange={(d) => saveEdit({ note: d })} />
+				<RichEditor grow label="Заметка дела" doc={e.note} onChange={(d) => saveEdit({ note: d })} />
 			</div>
-			<button class="remove" onclick={remove}>Убрать шаг</button>
+			<button class="remove" onclick={remove}>Убрать дело</button>
 		</div>
 	</div>
 {/if}
