@@ -13,7 +13,7 @@
 	import { colorOf } from '../palette.js';
 	import { treeOfPractices } from '../tree.js';
 	import { dayTitle } from '../today.js';
-	import { docToPlain, plainToDoc, type InboxItemView } from '../inbox.js';
+	import { docToPlain, plainToDoc, splitTitle, type InboxItemView } from '../inbox.js';
 	import type { PracticeView } from '../types.js';
 	import { addDays, type DateStr } from '../dates.js';
 	import { inbox } from './state.svelte.js';
@@ -39,10 +39,15 @@
 	let busy = $state(false);
 	let textFull = $state(false);
 	let error = $state<string | null>(null);
+	/* the thought is the first line (a title when sorted), «Подробно» is the rest (a note when sorted) */
 	// svelte-ignore state_referenced_locally
-	let text = $state(docToPlain(item.text));
+	const parts = splitTitle(item.text);
+	let head = $state(parts.title);
+	let details = $state(parts.rest);
+	let detailsEl = $state<HTMLTextAreaElement | undefined>();
+	const text = $derived(details.trim() ? `${head.trim()}\n${details.trimEnd()}` : head.trim());
 	// svelte-ignore state_referenced_locally
-	const original = text;
+	const original = docToPlain(item.text);
 
 	const sort = $derived(inbox.sort);
 	const tree = $derived(treeOfPractices(practices));
@@ -155,13 +160,25 @@
 		{#if step === 'menu'}
 			{#if item.pending}
 				<p class="muted">Запись ещё не отправлена: разобрать её можно, когда будет связь.</p>
-				<p class="text">{text}</p>
+				<p class="text">{docToPlain(item.text)}</p>
 			{:else}
-				<!-- #23: ⤢ opens the text on the whole screen -->
+				<!-- the thought itself, one line; under it «Подробно» — a field for the details; ⤢ opens it on the whole screen (#23) -->
+				<textarea
+					class="head"
+					bind:value={head}
+					rows={Math.min(4, Math.ceil(head.length / 34) || 1)}
+					aria-label="Мысль"
+					onkeydown={(e) => {
+						if (e.key === 'Enter') {
+							e.preventDefault();
+							detailsEl?.focus();
+						}
+					}}
+				></textarea>
 				<div class="tf" class:full={textFull}>
-					{#if textFull}<div class="full-head"><span>Запись</span><button class="done" onclick={() => (textFull = false)}>Готово</button></div>{/if}
-					<textarea bind:value={text} rows="3" aria-label="Текст записи"></textarea>
-					{#if !textFull}<button class="expand" aria-label="На весь экран" onclick={() => (textFull = true)}><Maximize2 size={16} /></button>{/if}
+					{#if textFull}<div class="full-head"><span>{head || 'Подробно'}</span><button class="done" onclick={() => (textFull = false)}>Готово</button></div>{/if}
+					<textarea bind:this={detailsEl} bind:value={details} rows="5" placeholder="Подробно…" aria-label="Подробно"></textarea>
+					{#if !textFull}<button class="expand" aria-label="Подробно — на весь экран" onclick={() => (textFull = true)}><Maximize2 size={16} /></button>{/if}
 				</div>
 			{/if}
 			<ul class="actions">
@@ -276,6 +293,12 @@
 		font: inherit;
 		font-size: 16px;
 		resize: vertical;
+	}
+	textarea.head {
+		margin-bottom: 8px;
+		resize: none;
+		font-weight: 600;
+		field-sizing: content;
 	}
 	.tf {
 		position: relative;
