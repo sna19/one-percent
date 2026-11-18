@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { appNum } from '#lib/appSettings.svelte.js';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -51,8 +52,8 @@
 	async function toggleFocus(goalId: number) {
 		if (!nowFocus) return;
 		const on = nowFocus.includes(goalId);
-		if (!on && nowFocus.length >= 3) {
-			error = 'В фокусе уже 3 цели — сними одну на экране «Цели»';
+		if (!on && nowFocus.length >= appNum('goals.focus_max')) {
+			error = `В фокусе уже ${appNum('goals.focus_max')} — сними одну на экране «Цели»`;
 			return;
 		}
 		const next = on ? nowFocus.filter((x) => x !== goalId) : [...nowFocus, goalId];
@@ -85,7 +86,7 @@
 	const words = (n: number, one: string, few: string, many: string) =>
 		n % 10 === 1 && n % 100 !== 11 ? one : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? few : many;
 	const goalsWord = (n: number) => `${n} ${words(n, 'цель', 'цели', 'целей')}`;
-	const rows = <T,>(key: string, xs: T[]) => (more[key] ? xs : xs.slice(0, REVIEW.MAX_ROWS));
+	const rows = <T,>(key: string, xs: T[]) => (more[key] ? xs : xs.slice(0, appNum('review.max_rows')));
 
 	const timeTotal = $derived(r ? r.time.reduce((s, t) => s + t.minutes, 0) : 0);
 	const timeSentence = $derived.by(() => {
@@ -186,7 +187,7 @@
 						</li>
 					{/each}
 				</ul>
-				{#if r.fading.length > REVIEW.MAX_ROWS && !more.fading}<button class="more" onclick={() => (more.fading = true)}>ещё {r.fading.length - REVIEW.MAX_ROWS}</button>{/if}
+				{#if r.fading.length > appNum('review.max_rows') && !more.fading}<button class="more" onclick={() => (more.fading = true)}>ещё {r.fading.length - appNum('review.max_rows')}</button>{/if}
 				{#if r.overload}
 					<p class="soft">Активных целей {r.overload.activeGoals}. Может, часть поставить на паузу? <a href="/settings?from=week">Настройки</a></p>
 				{/if}
@@ -226,7 +227,7 @@
 						<li><a href="/settings/goal/{m.goalId}?from=week">{m.goalTitle} · {m.title}</a><span class="meta">{m.text}</span></li>
 					{/each}
 				</ul>
-				{#if r.milestones.length > REVIEW.MAX_ROWS && !more.ms}<button class="more" onclick={() => (more.ms = true)}>ещё {r.milestones.length - REVIEW.MAX_ROWS}</button>{/if}
+				{#if r.milestones.length > appNum('review.max_rows') && !more.ms}<button class="more" onclick={() => (more.ms = true)}>ещё {r.milestones.length - appNum('review.max_rows')}</button>{/if}
 			</section>
 		{/if}
 

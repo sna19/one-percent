@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { ageDays, docToPlain, STALE_DAYS, type InboxItemView } from '../inbox.js';
+	import { ageDays, docToPlain, type InboxItemView } from '../inbox.js';
+	import { appNum } from '../appSettings.svelte.js';
 	import type { PracticeView } from '../types.js';
 	import type { DateStr } from '../dates.js';
 	import ItemSheet from './ItemSheet.svelte';
@@ -121,7 +122,7 @@
 					<span class="meta">
 						{when(i.createdAt)}
 						{#if i.pending}· не отправлено{/if}
-						{#if age >= STALE_DAYS}<span class="stale">{Math.floor(age / 7)} нед</span>{/if}
+						{#if age >= appNum('stale_days')}<span class="stale">{Math.floor(age / 7)} нед</span>{/if}
 					</span>
 				</button>
 			</li>

@@ -42,7 +42,8 @@
 	import CalendarArrowRight from '@lucide/svelte/icons/calendar-arrow-right';
 	import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
 	import WhenSheet from '#lib/WhenSheet.svelte';
-	import { STEPS_ON_TODAY, type StepView } from '#lib/steps.js';
+	import type { StepView } from '#lib/steps.js';
+	import { appNum } from '#lib/appSettings.svelte.js';
 	import GoalImage from '#lib/GoalImage.svelte';
 	import ChartNoAxesColumn from '@lucide/svelte/icons/chart-no-axes-column';
 	import MilestoneCheck from '#lib/milestone/MilestoneCheck.svelte';
@@ -505,9 +506,12 @@
 			const rem = remaining(m.dueDate, today);
 			text = `→ ${m.title}${rem ? ` · ${rem}` : ''}`;
 		}
+		// #29: how long it stays is the registry's «today.flash» (0 — no flash)
+		const ms = appNum('today.flash');
+		if (!ms) return;
 		flash = { text, goalId: p.goalId };
 		clearTimeout(flashTimer);
-		flashTimer = setTimeout(() => (flash = null), 2500);
+		flashTimer = setTimeout(() => (flash = null), ms);
 	}
 
 	// #24: a practice with a volume (a book)
@@ -970,7 +974,7 @@
 		<section class="steps-today">
 			<h2 class="zone">Шаги</h2>
 			<ul>
-				{#each stepsShowAll ? goalStepsToday : goalStepsToday.slice(0, STEPS_ON_TODAY) as st (st.id)}
+				{#each stepsShowAll ? goalStepsToday : goalStepsToday.slice(0, appNum('today.steps_rows')) as st (st.id)}
 					<li>
 						<input type="checkbox" aria-label="Шаг сделан: {st.title}" onchange={(e) => { e.currentTarget.checked = false; stepDone(st); }} />
 						<span class="sttl">{st.title}</span>
@@ -978,7 +982,7 @@
 					</li>
 				{/each}
 			</ul>
-			{#if !stepsShowAll && goalStepsToday.length > STEPS_ON_TODAY}<button class="more-btn2" onclick={() => (stepsShowAll = true)}>ещё {goalStepsToday.length - STEPS_ON_TODAY}</button>{/if}
+			{#if !stepsShowAll && goalStepsToday.length > appNum('today.steps_rows')}<button class="more-btn2" onclick={() => (stepsShowAll = true)}>ещё {goalStepsToday.length - appNum('today.steps_rows')}</button>{/if}
 		</section>
 	{/if}
 	{#if viewDay === today && dueCheck}

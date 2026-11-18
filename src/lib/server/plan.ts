@@ -14,6 +14,7 @@ import {
 	weekPlans
 } from './schema.js';
 import { InputError } from './settings.js';
+import { readSettings, writeSetting } from './appSettings.js';
 
 /** Spec 003 — weekly plan. Dates are local 'YYYY-MM-DD'; weeks start on Sunday. */
 
@@ -318,21 +319,14 @@ export function listTemplates(db: Db) {
 	return db.select().from(planTemplates).orderBy(asc(planTemplates.sortOrder), asc(planTemplates.id)).all();
 }
 
+/** #29: the soft limit of practices in a week's plan is a registry setting (`plan_limit`, none by default). */
 export function getPlanLimit(db: Db): number | null {
-	const v = db.select().from(appSettings).where(eq(appSettings.key, 'plan_limit')).get()?.value;
-	const n = Number(v);
-	return v && Number.isInteger(n) && n > 0 ? n : null;
+	const v = readSettings(db).plan_limit;
+	return typeof v === 'number' ? v : null;
 }
 
 export function setPlanLimit(db: Db, limit: number | null) {
-	if (limit === null) db.delete(appSettings).where(eq(appSettings.key, 'plan_limit')).run();
-	else {
-		if (!Number.isInteger(limit) || limit <= 0 || limit > 1000) throw new InputError('Лимит — целое число больше нуля');
-		db.insert(appSettings)
-			.values({ key: 'plan_limit', value: String(limit) })
-			.onConflictDoUpdate({ target: appSettings.key, set: { value: String(limit) } })
-			.run();
-	}
+	writeSetting(db, 'plan_limit', limit);
 }
 
 /**

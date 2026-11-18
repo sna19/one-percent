@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { appNum } from '#lib/appSettings.svelte.js';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -78,7 +79,7 @@
 		let ids = [...g.focus];
 		if (x.focus) ids = ids.filter((id) => id !== x.id);
 		else if (out) ids = [...ids.filter((id) => id !== out.id), x.id];
-		else if (ids.length >= 3) {
+		else if (ids.length >= appNum('goals.focus_max')) {
 			replacing = x;
 			return;
 		} else ids = [...ids, x.id];
@@ -199,7 +200,7 @@
 						{/each}
 					</ul>
 				{:else}
-					<p class="hint">Отметь ☆ у одной–трёх целей — они встанут сюда, ради них и планируется неделя.</p>
+					<p class="hint">Отметь ☆ у одной–{appNum('goals.focus_max')} целей — они встанут сюда, ради них и планируется неделя.</p>
 				{/if}
 			</section>
 
@@ -268,7 +269,7 @@
 	{@const x = replacing}
 	<div class="backdrop" role="presentation" onclick={() => (replacing = null)}></div>
 	<div class="sheet" role="dialog" aria-label="Какую цель снять с фокуса">
-		<p class="q">В фокусе уже 3 цели — какую снять, чтобы поставить «{x.title}»?</p>
+		<p class="q">В фокусе уже {appNum('goals.focus_max')} — какую снять, чтобы поставить «{x.title}»?</p>
 		<ul class="rows">
 			{#each focus as f (f.id)}
 				<li class="row">

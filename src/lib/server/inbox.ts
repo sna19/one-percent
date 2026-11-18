@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, ne } from 'drizzle-orm';
 import { addDays, isDateStr, weekStart, type DateStr } from '../dates.js';
-import { appendTask, HISTORY_DAYS, splitTitle, type InboxItemView } from '../inbox.js';
+import { appendTask, splitTitle, type InboxItemView } from '../inbox.js';
+import { setting } from './appSettings.js';
 import { isNoteDoc, isEmptyNote, NOTE_MAX, sanitizeLinks, type NoteDoc } from '../note.js';
 import type { Db } from './db.js';
 import { planItems, practices, goals, weekPlans, inboxItems } from './schema.js';
@@ -53,7 +54,7 @@ export function createItem(db: Db, b: { clientId: unknown; text: unknown; create
 /** Open items, newest first; and closed or sorted ones of the last 30 days for «История». */
 export function listInbox(db: Db, now = new Date()) {
 	const open = db.select().from(inboxItems).where(eq(inboxItems.status, 'open')).orderBy(desc(inboxItems.createdAt)).all();
-	const since = new Date(now.getTime() - HISTORY_DAYS * 86_400_000).toISOString();
+	const since = new Date(now.getTime() - setting(db, 'inbox.history_days') * 86_400_000).toISOString();
 	const history = db
 		.select()
 		.from(inboxItems)

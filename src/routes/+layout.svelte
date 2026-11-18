@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { loadAppSettings } from '#lib/appSettings.svelte.js';
 	import { onMount } from 'svelte';
 	import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -17,6 +18,8 @@
 	onMount(() => {
 		nav.tab = tabOf(page.url, 'today');
 		inbox.init(todayStr());
+		// #29: the registry's values, kept on the device and refreshed
+		loadAppSettings();
 	});
 	beforeNavigate(({ from }) => {
 		if (from?.url) nav.scroll.set(keyOf(from.url), window.scrollY);

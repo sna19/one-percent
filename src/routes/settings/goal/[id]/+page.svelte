@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { appNum } from '#lib/appSettings.svelte.js';
 	import { page } from '$app/state';
 	import { backFrom } from '#lib/back.js';
 	import { goto, invalidateAll } from '$app/navigation';
@@ -83,8 +84,9 @@
 	async function toggleFocus() {
 		if (!focusIds) return;
 		focusMsg = null;
-		if (!inFocus && focusIds.length >= 3) {
-			focusMsg = 'В фокусе уже 3 цели — сними одну на экране «Цели» или здесь у неё.';
+		const max = appNum('goals.focus_max');
+		if (!inFocus && focusIds.length >= max) {
+			focusMsg = `В фокусе уже ${max} — сними одну на экране «Цели» или здесь у неё.`;
 			return;
 		}
 		const next = inFocus ? focusIds.filter((x) => x !== g0.id) : [...focusIds, g0.id];

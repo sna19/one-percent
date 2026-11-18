@@ -3,7 +3,8 @@
 	import GripVertical from '@lucide/svelte/icons/grip-vertical';
 	import { sortable } from './sortable.js';
 	import RichEditor from './RichEditor.svelte';
-	import { STEP_STALE_DAYS, type StepView } from './steps.js';
+	import type { StepView } from './steps.js';
+	import { appNum } from './appSettings.svelte.js';
 	import { dayTitle } from './today.js';
 
 	/**
@@ -97,11 +98,11 @@
 					<input type="checkbox" aria-label="Сделано: {s.title}" onchange={(e) => { e.currentTarget.checked = false; check(s); }} />
 					<button class="title" onclick={() => (editing = { ...s })}>
 						<span>{s.title}</span>
-						{#if s.practiceId || s.plannedDate || age(s) >= STEP_STALE_DAYS}
+						{#if s.practiceId || s.plannedDate || age(s) >= appNum('stale_days')}
 							<small
 								>{[pName(s.practiceId) ? `сначала · ${pName(s.practiceId)}` : '', s.plannedDate ? dayTitle(s.plannedDate) : '']
 									.filter(Boolean)
-									.join(' · ')}{#if age(s) >= STEP_STALE_DAYS}<span class="stale">{Math.floor(age(s) / 7)} нед</span>{/if}</small
+									.join(' · ')}{#if age(s) >= appNum('stale_days')}<span class="stale">{Math.floor(age(s) / 7)} нед</span>{/if}</small
 							>
 						{/if}
 					</button>

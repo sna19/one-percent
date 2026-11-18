@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { appNum } from '#lib/appSettings.svelte.js';
 	import PracticeTree from '#lib/PracticeTree.svelte';
 	import { treeOfPractices } from '#lib/tree.js';
 	import { onMount } from 'svelte';
@@ -92,6 +93,9 @@
 	const groups = $derived(groupPractices(data?.practices ?? [], 'goal'));
 	const practiceCount = $derived(Object.values(data?.plan?.items ?? {}).filter((ds) => ds.length).length);
 	const sessionCount = $derived(planned.size);
+	// #29: a day with more practices than «plan.day_overload» gets a soft warning
+	const dayCount = (d: string) => Object.values(data?.plan?.items ?? {}).filter((ds) => (ds as string[]).includes(d)).length;
+	const overloaded = $derived(days.filter((d) => d >= today && dayCount(d) > appNum('plan.day_overload')));
 	const tooMany = $derived(data?.limit != null && practiceCount > data.limit);
 
 	// Spec 012 B: «Открыть в плане недели» — scroll to the practice's row and light it for a moment
@@ -111,7 +115,7 @@
 	const focus = $derived(data?.plan?.focus ?? []);
 	async function toggleFocus(goalId: number) {
 		const next = focus.includes(goalId) ? focus.filter((g) => g !== goalId) : [...focus, goalId];
-		if (next.length > 3 || !data?.plan) return;
+		if (next.length > appNum('goals.focus_max') || !data?.plan) return;
 		data.plan.focus = next;
 		const r = await fetch('/api/review', {
 			method: 'POST',
@@ -359,11 +363,17 @@
 			{#if tooMany}
 				<p class="warn">В плане {practiceCount} практик. Это реалистично?</p>
 			{/if}
+			{#if overloaded.length}
+				<p class="warn">
+					{overloaded.map((d) => `${DAY_NAMES[new Date(d + 'T12:00').getDay()]} — ${dayCount(d)}`).join(', ')}: больше {appNum('plan.day_overload')} практик за день. Такой
+					день обычно кончается «по плану 3 из 10».
+				</p>
+			{/if}
 			<div class="grid">
 				<div></div>
 				{#each days as d (d)}
-					<div class="day" class:is-today={d === today}>
-						<span>{DAY_NAMES[new Date(d + 'T12:00').getDay()]}</span><b>{Number(d.slice(8))}</b>
+					<div class="day" class:is-today={d === today} class:over={overloaded.includes(d)}>
+						<span>{DAY_NAMES[new Date(d + 'T12:00').getDay()]}</span><b>{Number(d.slice(8))}</b><small>{dayCount(d) || ''}</small>
 					</div>
 				{/each}
 				{#each groups as g (g.key)}
@@ -398,12 +408,12 @@
 		{#if planGoals.length}
 			<section>
 				<h2>Фокус недели</h2>
-				<p class="muted small">До трёх целей, ради которых планируется неделя. В итогах они идут первыми.</p>
+				<p class="muted small">До {appNum('goals.focus_max')} целей, ради которых планируется неделя. В итогах они идут первыми.</p>
 				<div class="focus" role="group" aria-label="Фокус недели">
 					{#each planGoals as g (g.key)}
 						{@const id = g.practices[0].goalId}
 						{@const on = focus.includes(id)}
-						<button class:on aria-pressed={on} disabled={!on && focus.length >= 3} onclick={() => toggleFocus(id)}>{g.title}</button>
+						<button class:on aria-pressed={on} disabled={!on && focus.length >= appNum('goals.focus_max')} onclick={() => toggleFocus(id)}>{g.title}</button>
 					{/each}
 				</div>
 			</section>
@@ -640,6 +650,14 @@
 	.day b {
 		font-size: 15px;
 		color: var(--text);
+	}
+	.day small {
+		min-height: 14px;
+		font-size: 11px;
+	}
+	.day.over {
+		outline: 2px solid #c98a06;
+		outline-offset: -2px;
 	}
 	.day.is-today {
 		background: var(--today);

@@ -8,8 +8,6 @@ export const REVIEW = {
 	HISTORY_WEEKS: 4,
 	/** fading: done this week below this share of the usual */
 	FADING_SHARE: 0.5,
-	/** at most this many rows in a block, the rest behind «ещё N» */
-	MAX_ROWS: 3,
 	/** a weekday is weak when less than this share of its plan was done */
 	WEAK_DAY: 0.5,
 	/** a practice done less than half of its plan this many weeks running is «too much» */
@@ -18,8 +16,6 @@ export const REVIEW = {
 	MILESTONE_SOON_DAYS: 14,
 	/** one format taking this share of the minutes is a skew worth a sentence */
 	TIME_SKEW: 0.6,
-	/** focus of the week: at most this many goals */
-	FOCUS_MAX: 3,
 	/** overload: more fading goals than this suggests pausing some */
 	OVERLOAD_FADING: 3
 } as const;

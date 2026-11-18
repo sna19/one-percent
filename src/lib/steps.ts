@@ -16,6 +16,6 @@ export interface StepView {
 }
 
 /** A step older than this is softly highlighted and shows up in the weekly review. */
-export const STEP_STALE_DAYS = 14;
+/* #29: the age mark of a step is the registry's «stale_days»; the rows on «Сегодня» — «today.steps_rows» */
 /** At most this many goal steps in the block on top of «Сегодня». */
-export const STEPS_ON_TODAY = 3;
+

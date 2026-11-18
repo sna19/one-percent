@@ -8,7 +8,7 @@ import { categories, entries, formats, goals, milestones, planItems, practices, 
 import { ensureCurrentPlan, getPlanLimit } from './plan.js';
 import { progressUntil } from './milestones.js';
 import { openSteps } from './steps.js';
-import { STEP_STALE_DAYS } from '../steps.js';
+import { setting } from './appSettings.js';
 import { InputError } from './settings.js';
 
 /** Spec 010 — the weekly review, counted from marks and plans; only the retro answer is stored. */
@@ -230,7 +230,7 @@ export function computeReview(db: Db, start: DateStr, today: DateStr): WeeklyRev
 		retroText: reviews.get(start)?.retroText ?? '',
 		staleStep: (() => {
 			const old = openSteps(db)
-				.filter((st) => st.createdAt.slice(0, 10) <= addDays(end, -STEP_STALE_DAYS))
+				.filter((st) => st.createdAt.slice(0, 10) <= addDays(end, -setting(db, 'review.stuck_step_days')))
 				.sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
 			if (!old) return null;
 			const weeks = Math.floor((Date.parse(end) - Date.parse(old.createdAt.slice(0, 10))) / (7 * 86_400_000));
@@ -278,7 +278,8 @@ export function reviewPending(db: Db, today: DateStr): DateStr | null {
 export function setFocus(db: Db, start: DateStr, goalIds: unknown, today?: DateStr) {
 	if (!Array.isArray(goalIds) || !goalIds.every(Number.isInteger)) throw new InputError('Ожидается список целей');
 	const ids = [...new Set(goalIds as number[])];
-	if (ids.length > REVIEW.FOCUS_MAX) throw new InputError(`Фокус — не больше ${REVIEW.FOCUS_MAX} целей`);
+	const max = setting(db, 'goals.focus_max');
+	if (ids.length > max) throw new InputError(`Фокус — не больше ${max} целей`);
 	let plan = db.select().from(weekPlans).where(eq(weekPlans.weekStart, start)).get();
 	if (!plan && today) {
 		ensureCurrentPlan(db, start, today);
@@ -288,4 +289,18 @@ export function setFocus(db: Db, start: DateStr, goalIds: unknown, today?: DateS
 	const active = new Set(db.select({ id: goals.id }).from(goals).where(and(isNull(goals.archivedAt), eq(goals.status, 'active'))).all().map((g) => g.id));
 	if (!ids.every((g) => active.has(g))) throw new InputError('В фокус — только активные цели');
 	db.update(weekPlans).set({ focusGoalIds: ids.length ? ids.join(',') : null }).where(eq(weekPlans.id, plan.id)).run();
+}
+
+/**
+ * #29: after «Цели в фокусе» goes below the number of ★ of this week — the goals now in focus, for the screen to
+ * ask which to take off; null when it fits.
+ */
+export function focusOverLimit(db: Db, today?: unknown) {
+	const t = typeof today === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(today) ? today : new Date().toISOString().slice(0, 10);
+	const plan = db.select().from(weekPlans).where(eq(weekPlans.weekStart, weekStart(t))).get();
+	const ids = (plan?.focusGoalIds ?? '').split(',').filter(Boolean).map(Number);
+	const max = setting(db, 'goals.focus_max');
+	if (ids.length <= max) return null;
+	const rows = db.select({ id: goals.id, title: goals.title }).from(goals).all().filter((g) => ids.includes(g.id));
+	return { start: weekStart(t), max, goals: ids.map((id) => rows.find((g) => g.id === id)).filter(Boolean) as { id: number; title: string }[] };
 }

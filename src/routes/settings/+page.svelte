@@ -10,6 +10,7 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import GripVertical from '@lucide/svelte/icons/grip-vertical';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
 	import Archive from '@lucide/svelte/icons/archive';
 	import History from '@lucide/svelte/icons/history';
 	import ChevronsDownUp from '@lucide/svelte/icons/chevrons-down-up';
@@ -174,6 +175,11 @@
 
 	{#if error}<p class="error" role="alert">{error}</p>{/if}
 
+	<!-- #29: the app's own rules come first -->
+	<ul class="refs app">
+		<li><a href="/settings/app"><SlidersHorizontal size={18} /><span class="grow">Приложение</span><span class="meta">правила и лимиты</span><ChevronRight size={18} /></a></li>
+	</ul>
+
 	<!-- #25: the practice navigator — the same tree everywhere, with search and filters -->
 	<PracticeTree
 		bind:this={treeComp}
@@ -224,6 +230,15 @@
 </main>
 
 <style>
+	.refs.app {
+		margin-bottom: 14px;
+	}
+	.refs.app a {
+		gap: 10px;
+	}
+	.grow {
+		flex: 1;
+	}
 	.pstar {
 		margin-right: 4px;
 		color: var(--muted);

@@ -19,9 +19,9 @@ export interface InboxItemView {
 }
 
 /** History keeps closed and sorted items for 30 days. */
-export const HISTORY_DAYS = 30;
+/* #29: the history's term and the age mark are registry settings («inbox.history_days», «stale_days») */
 /** An open item older than this gets a quiet «2 нед» label. */
-export const STALE_DAYS = 14;
+
 
 /** The quick capture field is plain text: each line becomes a paragraph of a note document. */
 export function plainToDoc(s: string): NoteDoc {
