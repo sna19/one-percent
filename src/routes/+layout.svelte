@@ -20,6 +20,17 @@
 		inbox.init(todayStr());
 		// #29: the registry's values, kept on the device and refreshed
 		loadAppSettings();
+		// A new version on the server: the app on the home screen comes back from the background with its old
+		// page; when it is shown again and the server's build differs, it reloads once (not while typing).
+		const check = async () => {
+			if (document.visibilityState !== 'visible') return;
+			const r = await fetch('/health', { cache: 'no-store' }).catch(() => undefined);
+			const built = r?.ok ? (await r.json().catch(() => null))?.built : null;
+			const typing = document.activeElement?.matches('input, textarea, [contenteditable="true"]');
+			if (built && built !== __BUILD_TIME__ && !typing) location.reload();
+		};
+		document.addEventListener('visibilitychange', check);
+		check();
 	});
 	beforeNavigate(({ from }) => {
 		if (from?.url) nav.scroll.set(keyOf(from.url), window.scrollY);

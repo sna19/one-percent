@@ -1064,6 +1064,9 @@
 						<input type="checkbox" aria-label="Шаг сделан: {st.title}" onchange={(e) => { e.currentTarget.checked = false; stepDone(st); }} />
 						<span class="sttl">{st.title}</span>
 						<a class="obj sgoal" href="/settings/goal/{st.goalId}?from={tab}">{st.goalTitle}</a>
+						{#if st.note && !isEmptyNote(st.note)}
+							<div class="dnote classic"><NoteView doc={st.note} onToggle={(i) => toggleDeedTask(st, i)} onOpen={() => {}} /></div>
+						{/if}
 					</li>
 				{/each}
 			</ul>
@@ -2689,5 +2692,11 @@
 		flex-basis: 100%;
 		padding-left: 34px;
 		font-size: 15px;
+	}
+	.steps-today li {
+		flex-wrap: wrap;
+	}
+	.dnote.classic {
+		padding-left: 30px;
 	}
 </style>
