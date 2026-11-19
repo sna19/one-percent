@@ -3,13 +3,18 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { crossfade } from 'svelte/transition';
-	import { flip } from 'svelte/animate';
 	import Flag from '@lucide/svelte/icons/flag';
 	import Star from '@lucide/svelte/icons/star';
 	import CirclePlus from '@lucide/svelte/icons/circle-plus';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import LayoutGrid from '@lucide/svelte/icons/layout-grid';
+	import Search from '@lucide/svelte/icons/search';
+	import X from '@lucide/svelte/icons/x';
+	import ArrowRight from '@lucide/svelte/icons/arrow-right';
+	import ListChecks from '@lucide/svelte/icons/list-checks';
+	import DeedSheet from '#lib/DeedSheet.svelte';
+	import type { StepView } from '#lib/steps.js';
+	import { group, GROUPINGS, idleDays, idleLabel, search, sortGoals, SORTS, type GroupBy, type SortBy } from '#lib/goalFinder.js';
 	import TopBar from '#lib/TopBar.svelte';
 	import GoalImage from '#lib/GoalImage.svelte';
 	import QuickCapture from '#lib/inbox/QuickCapture.svelte';
@@ -20,10 +25,9 @@
 	import type { Gallery, GalleryGoal } from '#lib/server/goals.js';
 
 	/**
-	 * #26 (replaces the ribbons of Spec 013) — «Цели» without heaps: three tiers, all vertical.
-	 * ★ В фокусе — up to three compact cards (the week's focus of Spec 010; ☆ / ★ toggles it, the goal moves);
-	 * Эта неделя — rows of goals with practices in this week's plan; Остальные — folded categories, then
-	 * «На паузе» (out of the plan by rotation) and «Пройденный путь». What is missing is simply not drawn.
+	 * #31 (owner's request 19.11.2026, replaces the tiers of #26) — «Цели» as a finder: a search line on top, one
+	 * list of all goals grouped by a chip (★ plan, movement, categories, formats, …), ★ focus to come back fast,
+	 * and a goal's row opens in place with its practices and deeds — through the goal to the task in one tap.
 	 */
 	const today = todayStr();
 	const days = weekDays(weekStart(today));
@@ -31,26 +35,52 @@
 	let error = $state<string | null>(null);
 	let capture: QuickCapture;
 	let replacing = $state<GalleryGoal | null>(null);
-	const [send, receive] = crossfade({ duration: 260 });
 
-	// what is unfolded is remembered on this device
-	let unfolded = $state<string[]>([]);
+	// the grouping, the order, folded groups and opened goals are remembered on this device
+	let by = $state<GroupBy>('plan');
+	let sortBy = $state<SortBy>('own');
+	let folded = $state<string[]>(['plan:path', 'plan:paused']);
+	let opened = $state<number[]>([]);
+	let query = $state('');
+	const keep = (k: string, v: unknown) => {
+		try {
+			localStorage.setItem(k, JSON.stringify(v));
+		} catch {
+			/* not critical */
+		}
+	};
 	onMount(async () => {
 		try {
-			unfolded = JSON.parse(localStorage.getItem('goals-unfolded') ?? '[]');
+			const v = JSON.parse(localStorage.getItem('goals-finder') ?? 'null');
+			if (v) {
+				if (GROUPINGS.some((x) => x.key === v.by)) by = v.by;
+				if (SORTS.some((x) => x.key === v.sortBy)) sortBy = v.sortBy;
+				if (Array.isArray(v.folded)) folded = v.folded;
+				if (Array.isArray(v.opened)) opened = v.opened;
+			}
 		} catch {
 			/* private mode */
 		}
 		await load();
 		nav.restore(keyOf(page.url));
 	});
+	const save = () => keep('goals-finder', { by, sortBy, folded, opened });
 	function fold(k: string) {
-		unfolded = unfolded.includes(k) ? unfolded.filter((x) => x !== k) : [...unfolded, k];
-		try {
-			localStorage.setItem('goals-unfolded', JSON.stringify(unfolded));
-		} catch {
-			/* not critical */
-		}
+		const key = `${by}:${k}`;
+		folded = folded.includes(key) ? folded.filter((x) => x !== key) : [...folded, key];
+		save();
+	}
+	function toggle(id: number) {
+		opened = opened.includes(id) ? opened.filter((x) => x !== id) : [...opened, id];
+		save();
+	}
+	function setBy(k: GroupBy) {
+		by = k;
+		save();
+	}
+	function setSort(k: SortBy) {
+		sortBy = k;
+		save();
 	}
 
 	async function load() {
@@ -65,13 +95,53 @@
 
 	const all = $derived(g ? g.categories.flatMap((c) => c.goals) : []);
 	const focus = $derived(g ? g.focus.map((id) => all.find((x) => x.id === id)).filter((x): x is GalleryGoal => !!x) : []);
-	const week = $derived(all.filter((x) => x.inWeek && !x.focus));
-	const paused = $derived(all.filter((x) => x.rotation && !x.focus));
-	const rest = $derived(
-		(g?.categories ?? [])
-			.map((c) => ({ ...c, goals: c.goals.filter((x) => !x.focus && !x.inWeek && !x.rotation) }))
-			.filter((c) => c.goals.length)
+	/** the goals of growth and the spheres: what the finder lists */
+	const everything = $derived(g ? [...all, ...(g.areaGoals ?? [])] : []);
+	const groups = $derived(
+		g
+			? group(by, everything, g.path, g.categories, g.formats ?? [], today).map((x) => ({
+					...x,
+					// ★ focus keeps its own order; the rest follow the chosen order
+					goals: by === 'plan' && x.key === 'focus' ? focus : sortGoals(x.goals, sortBy, today)
+				}))
+			: []
 	);
+	const hits = $derived(query.trim() ? search([...everything, ...(g?.path ?? [])], query) : null);
+
+	// a deed opened from a goal's row: the same sheet as on «Сегодня»
+	let deed = $state<StepView | null>(null);
+	async function stepCall(body: Record<string, unknown>) {
+		const r = await fetch('/api/steps', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => undefined);
+		if (!r?.ok) {
+			error = (await r?.json().catch(() => null))?.message ?? 'Нет связи с сервером';
+			return null;
+		}
+		return r.json();
+	}
+	async function saveDeed(fields: Record<string, unknown>) {
+		if (!deed) return;
+		deed = { ...deed, ...fields } as StepView;
+		await stepCall({ action: 'update', id: deed.id, fields });
+	}
+	async function removeDeed() {
+		if (!deed || !confirm(`Убрать дело «${deed.title}»?`)) return;
+		const id = deed.id;
+		deed = null;
+		await stepCall({ action: 'delete', id });
+		await load();
+	}
+	async function deedDone() {
+		if (!deed) return;
+		const id = deed.id;
+		deed = null;
+		await stepCall({ action: 'done', id });
+		await load();
+	}
+	async function closeDeed() {
+		deed = null;
+		await load();
+	}
+	const practicesWord = (n: number) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'практика' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'практики' : 'практик'}`;
 
 	/** ☆ → into focus; ★ → back to its place. A fourth asks which one to take out. */
 	async function star(x: GalleryGoal, out?: GalleryGoal) {
@@ -143,14 +213,62 @@
 	</span>
 {/snippet}
 
-{#snippet row(x: GalleryGoal, pale = false)}
-	<li class="row" class:pale in:receive={{ key: x.id }} out:send={{ key: x.id }} style="--c-light:{colorOf(x.color).light};--c-dark:{colorOf(x.color).dark}">
-		<a class="obj rlink" href="/settings/goal/{x.id}?from=goals">
-			<GoalImage kind={x.imageKind} value={x.imageValue} color={x.color} title={x.title} size={26} soft />
-			<span class="rt">{x.title}</span>
-			{#if x.volume}<span class="vol">{x.volume}</span>{:else}{@render dots(x)}{/if}
-		</a>
-		{@render starBtn(x)}
+{#snippet meta(x: GalleryGoal)}
+	{@const d = idleDays(x, today)}
+	<span class="meta">
+		{#if x.kind === 'area'}
+			{x.deeds.length ? `дел ${x.deeds.length}` : 'дел нет'}
+		{:else}
+			<span class:fade={d !== null && d > 7} class:asleep={d === null || d > 30}>{idleLabel(x, today)}</span>
+			{#if x.practices.length}· {practicesWord(x.practices.length)}{/if}
+			{#if x.deeds.length}· дел {x.deeds.length}{/if}
+			{#if x.focus && paceWords(x)}· {paceWords(x)}{:else if x.volume}· {x.volume}{/if}
+		{/if}
+	</span>
+{/snippet}
+
+{#snippet goalRow(x: GalleryGoal, pale: boolean, hit?: { via: string[]; practiceIds: number[]; deedIds: number[] })}
+	{@const open = hit ? true : opened.includes(x.id)}
+	<li class="row" class:pale class:open style="--c-light:{colorOf(x.color).light};--c-dark:{colorOf(x.color).dark}">
+		<div class="rhead">
+			<button class="rlink" aria-expanded={open} onclick={() => toggle(x.id)}>
+				<GoalImage kind={x.imageKind} value={x.imageValue} color={x.color} title={x.title} size={28} soft />
+				<span class="rtext">
+					<span class="rt">{x.title}</span>
+					{#if hit?.via.length}<span class="via">через {hit.via.join(', ')}</span>{:else}{@render meta(x)}{/if}
+				</span>
+				{#if x.kind !== 'area' && !x.archivedAt}{@render dots(x)}{/if}
+			</button>
+			{#if x.kind !== 'area' && !x.archivedAt}{@render starBtn(x)}{/if}
+		</div>
+		{#if open}
+			<div class="inside">
+				{#if x.milestone}
+					<p class="ms"><Flag size={13} /><span class="mt">{x.milestone.title}</span>{#if x.milestone.dueDate}<span class="due">· {remaining(x.milestone.dueDate, today)}</span>{/if}</p>
+					{#if x.milestone.budgetKind !== 'none' && x.milestone.budgetTarget}<span class="bar"><span style="width:{share(x)}%"></span></span>{/if}
+				{/if}
+				{#if x.practices.length}
+					<ul class="items">
+						{#each x.practices as p (p.id)}
+							<li class:hl={hit?.practiceIds.includes(p.id)}>
+								<a class="obj item" href="/settings/practice/{p.id}?from=goals"><span class="it">{p.title}</span>{#if p.format}<span class="fmt">{p.format}</span>{/if}<ChevronRight size={16} /></a>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+				{#if x.deeds.length}
+					<ul class="items">
+						{#each x.deeds as st (st.id)}
+							<li class:hl={hit?.deedIds.includes(st.id)}>
+								<button class="item" onclick={() => (deed = st)}><ListChecks size={15} /><span class="it">{st.title}</span>{#if st.plannedDate || st.dueDate}<span class="fmt">{st.dueDate ? `до ${st.dueDate.slice(8)}.${st.dueDate.slice(5, 7)}` : `${st.plannedDate!.slice(8)}.${st.plannedDate!.slice(5, 7)}`}</span>{/if}</button>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+				{#if !x.practices.length && !x.deeds.length}<p class="hint">Практик и дел пока нет.</p>{/if}
+				<a class="obj tolink" href="/settings/goal/{x.id}?from=goals">Экран цели<ArrowRight size={16} /></a>
+			</div>
+		{/if}
 	</li>
 {/snippet}
 
@@ -164,115 +282,64 @@
 	{#if error}<p class="note" role="alert">{error}</p>{/if}
 
 	{#if g}
-		{#if !all.length}
+		{#if !everything.length && !g.path.length}
 			<div class="empty-state">
 				<p>Создай первую цель.</p>
 				<button class="primary" onclick={newGoal}>Новая цель</button>
 			</div>
 		{:else}
-			<section>
-				<h2><Star size={13} fill="currentColor" />В фокусе</h2>
-				{#if focus.length}
-					<ul class="cards">
-						{#each focus as x (x.id)}
-							<li
-								class="card"
-								animate:flip={{ duration: 220 }}
-								in:receive={{ key: x.id }}
-								out:send={{ key: x.id }}
-								style="--c-light:{colorOf(x.color).light};--c-dark:{colorOf(x.color).dark}"
-							>
-								<a class="obj clink" href="/settings/goal/{x.id}?from=goals">
-									<span class="chead">
-										<GoalImage kind={x.imageKind} value={x.imageValue} color={x.color} title={x.title} size={30} soft />
-										<span class="ct">{x.title}</span>
-									</span>
-									{#if x.milestone}
-										<span class="ms"><Flag size={13} /><span class="mt">{x.milestone.title}</span>{#if x.milestone.dueDate}<span class="due">· {remaining(x.milestone.dueDate, today)}</span>{/if}</span>
-										{#if x.milestone.budgetKind !== 'none' && x.milestone.budgetTarget}
-											<span class="bar"><span style="width:{share(x)}%"></span></span>
-										{/if}
-									{/if}
-									<span class="foot"><span>{paceWords(x) || x.volume || ''}</span>{@render dots(x)}</span>
-								</a>
-								{@render starBtn(x)}
-							</li>
+			<div class="finder">
+				<label class="searchbox">
+					<Search size={18} />
+					<input type="search" placeholder="Найти цель, практику или дело" aria-label="Поиск целей" bind:value={query} autocomplete="off" autocorrect="off" spellcheck="false" />
+					{#if query}<button class="clear" aria-label="Очистить" onclick={() => (query = '')}><X size={16} /></button>{/if}
+				</label>
+				{#if !hits}
+					<div class="chips" role="radiogroup" aria-label="Группировать">
+						{#each GROUPINGS as x (x.key)}
+							<button role="radio" aria-checked={by === x.key} class:on={by === x.key} onclick={() => setBy(x.key)}>{x.label}</button>
 						{/each}
-					</ul>
-				{:else}
-					<p class="hint">Отметь ☆ у одной–{appNum('goals.focus_max')} целей — они встанут сюда, ради них и планируется неделя.</p>
+					</div>
+					<label class="sortline">
+						<span>Порядок</span>
+						<select value={sortBy} onchange={(e) => setSort(e.currentTarget.value as SortBy)}>
+							{#each SORTS as x (x.key)}<option value={x.key}>{x.label}</option>{/each}
+						</select>
+					</label>
 				{/if}
-			</section>
+			</div>
 
-			{#if week.length}
+			{#if hits}
 				<section>
-					<h2>Эта неделя{g.template ? ` · ${g.template}` : ''}</h2>
-					<ul class="rows">{#each week as x (x.id)}{@render row(x)}{/each}</ul>
+					<h2>Найдено {hits.length ? goalsWord(hits.length) : 'ничего'}</h2>
+					{#if hits.length}
+						<ul class="rows">
+							{#each hits as h (h.goal.id)}{@render goalRow(h.goal, !!h.goal.archivedAt, h)}{/each}
+						</ul>
+					{:else}
+						<p class="hint">Ищу по названию цели, «зачем», майлстону, практикам и открытым делам.</p>
+					{/if}
 				</section>
-			{/if}
-
-			{#if rest.length || paused.length || g.path.length}
-				<section>
-					<h2>Остальные</h2>
-					<ul class="rows folds">
-						{#each rest as c (c.id)}
-							{@const open = unfolded.includes(`c${c.id}`)}
-							<li class="fold">
-								<button class="fbtn" aria-expanded={open} onclick={() => fold(`c${c.id}`)}>
-									<span class="chev" class:open><ChevronRight size={16} /></span><span class="cdot" style="--c:{colorOf(c.color).light}"></span>{c.name}<span class="n">{c.goals.length}</span>
-								</button>
-								{#if open}<ul class="rows inner">{#each c.goals as x (x.id)}{@render row(x)}{/each}</ul>{/if}
-							</li>
-						{/each}
-						{#if paused.length}
-							{@const open = unfolded.includes('paused')}
-							<li class="fold">
-								<button class="fbtn pale" aria-expanded={open} onclick={() => fold('paused')}>
-									<span class="chev" class:open><ChevronRight size={16} /></span>На паузе<span class="n">{goalsWord(paused.length)}</span>
-								</button>
-								{#if open}<ul class="rows inner">{#each paused as x (x.id)}{@render row(x, true)}{/each}</ul>{/if}
-							</li>
+			{:else}
+				{#if by === 'plan' && !focus.length}
+					<p class="hint top">Отметь ☆ у одной–{appNum('goals.focus_max')} целей — они встанут наверх, ради них и планируется неделя.</p>
+				{/if}
+				{#each groups as gr (gr.key)}
+					{@const isFolded = folded.includes(`${by}:${gr.key}`)}
+					<section>
+						<button class="ghead" class:pale={gr.pale} aria-expanded={!isFolded} onclick={() => fold(gr.key)}>
+							<span class="chev" class:open={!isFolded}><ChevronRight size={14} /></span>
+							{#if gr.color}<span class="cdot" style="--c:{colorOf(gr.color).light}"></span>{/if}
+							<span>{gr.title}{by === 'plan' && gr.key === 'week' && g.template ? ` · ${g.template}` : ''}</span>
+							<span class="n">{gr.goals.length}</span>
+						</button>
+						{#if !isFolded}
+							<ul class="rows">
+								{#each gr.goals as x (x.id)}{@render goalRow(x, !!gr.pale)}{/each}
+							</ul>
 						{/if}
-						{#if g.path.length}
-							{@const open = unfolded.includes('path')}
-							<li class="fold">
-								<button class="fbtn pale" aria-expanded={open} onclick={() => fold('path')}>
-									<span class="chev" class:open><ChevronRight size={16} /></span>Пройденный путь<span class="n">{g.path.length}</span>
-								</button>
-								{#if open}
-									<ul class="rows inner">
-										{#each g.path as x (x.id)}
-											<li class="row pale">
-												<a class="obj rlink" href="/settings/goal/{x.id}?from=goals">
-													<GoalImage kind={x.imageKind} value={x.imageValue} color={x.color} title={x.title} size={26} soft />
-													<span class="rt">{x.title}</span>
-													<span class="vol">{x.archivedAt ? new Date(x.archivedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</span>
-												</a>
-											</li>
-										{/each}
-									</ul>
-								{/if}
-							</li>
-						{/if}
-					</ul>
-				</section>
-			{/if}
-			{#if g.areas?.length}
-				<!-- #30: spheres of life — compact, at the bottom, with their open deeds -->
-				<section>
-					<h2>Сферы</h2>
-					<ul class="rows">
-						{#each g.areas as x (x.id)}
-							<li class="row">
-								<a class="obj rlink" href="/settings/goal/{x.id}?from=goals">
-									<GoalImage kind={x.imageKind} value={x.imageValue} color={x.color} title={x.title} size={26} soft />
-									<span class="rt">{x.title}</span>
-									<span class="vol">{x.open ? `дел ${x.open}` : 'дел нет'}</span>
-								</a>
-							</li>
-						{/each}
-					</ul>
-				</section>
+					</section>
+				{/each}
 			{/if}
 			<!-- #27: «Все практики» left the tab bar; it is also here, at the end -->
 			<a class="obj allrow" href="/?tab=all&from=goals"><LayoutGrid size={18} />Все практики<ChevronRight size={18} /></a>
@@ -299,6 +366,17 @@
 		</ul>
 		<button class="cancel" onclick={() => (replacing = null)}>Отмена</button>
 	</div>
+{/if}
+
+{#if deed}
+	<DeedSheet
+		step={deed}
+		practices={everything.find((x) => x.id === deed!.goalId)?.practices.map((p) => ({ id: p.id, title: p.title })) ?? []}
+		onSave={saveDeed}
+		onRemove={removeDeed}
+		onDone={deedDone}
+		onClose={closeDeed}
+	/>
 {/if}
 
 <QuickCapture bind:this={capture} />
@@ -328,38 +406,10 @@
 		margin: 0;
 		padding: 0;
 	}
-	.cards {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-	.card {
-		--c: var(--c-light);
-		position: relative;
-		border-radius: 14px;
-		background: var(--surface);
-		border-left: 4px solid var(--c);
-	}
 	@media (prefers-color-scheme: dark) {
-		.card,
 		.row {
 			--c: var(--c-dark);
 		}
-	}
-	.clink {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-		padding: 10px 52px 10px 12px;
-	}
-	.chead {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-	}
-	.ct {
-		font-size: 17px;
-		font-weight: 700;
 	}
 	.ms {
 		display: flex;
@@ -392,22 +442,10 @@
 		height: 100%;
 		background: var(--c);
 	}
-	.foot {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		gap: 8px;
-		font-size: 13px;
-		color: var(--muted);
-	}
 	.rows {
 		background: var(--surface);
 		border-radius: 12px;
 		overflow: hidden;
-	}
-	.rows.inner {
-		background: none;
-		border-radius: 0;
 	}
 	.row {
 		--c: var(--c-light);
@@ -415,8 +453,7 @@
 		display: flex;
 		align-items: center;
 	}
-	.row + .row,
-	.fold + .fold {
+	.row + .row {
 		border-top: 1px solid var(--line);
 	}
 	.row.pale {
@@ -428,8 +465,215 @@
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		min-height: 46px;
-		padding: 0 4px 0 12px;
+		min-height: 52px;
+		padding: 4px 4px 4px 12px;
+		border: none;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.row {
+		flex-direction: column;
+		align-items: stretch;
+	}
+	.rhead {
+		display: flex;
+		align-items: center;
+	}
+	.rtext {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+	}
+	.meta,
+	.via {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 13px;
+		color: var(--muted);
+	}
+	.via {
+		color: var(--text);
+	}
+	.fade {
+		color: var(--text);
+	}
+	.asleep {
+		font-style: italic;
+	}
+	.inside {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding: 0 12px 12px 50px;
+	}
+	.inside .ms {
+		margin: 0;
+	}
+	.items {
+		border-radius: 10px;
+		background: var(--bg);
+		overflow: hidden;
+	}
+	.items li + li {
+		border-top: 1px solid var(--line);
+	}
+	.items li.hl {
+		background: color-mix(in srgb, var(--c) 18%, transparent);
+	}
+	.item {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		width: 100%;
+		box-sizing: border-box;
+		min-height: 42px;
+		padding: 0 10px;
+		border: none;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		font-size: 15px;
+		text-align: left;
+		cursor: pointer;
+	}
+	.item :global(svg) {
+		flex: none;
+		color: var(--muted);
+	}
+	.it {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.fmt {
+		flex: none;
+		font-size: 12px;
+		color: var(--muted);
+	}
+	.tolink {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		align-self: flex-start;
+		min-height: 36px;
+		font-size: 14px;
+		color: var(--muted);
+	}
+	.finder {
+		position: sticky;
+		top: 0;
+		z-index: 5;
+		margin: 0 -16px 12px;
+		padding: 6px 16px 8px;
+		background: var(--bg);
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.searchbox {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-height: 44px;
+		padding: 0 10px;
+		border-radius: 12px;
+		background: var(--surface);
+		color: var(--muted);
+	}
+	.searchbox input {
+		flex: 1;
+		min-width: 0;
+		border: none;
+		outline: none;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		font-size: 16px;
+	}
+	.searchbox input::-webkit-search-cancel-button {
+		display: none;
+	}
+	.clear {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 32px;
+		height: 32px;
+		border: none;
+		border-radius: 50%;
+		background: none;
+		color: var(--muted);
+		cursor: pointer;
+	}
+	.chips {
+		display: flex;
+		gap: 6px;
+		overflow-x: auto;
+		margin: 0 -16px;
+		padding: 0 16px;
+		scrollbar-width: none;
+	}
+	.chips button {
+		flex: none;
+		min-height: 34px;
+		padding: 0 12px;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		font-size: 14px;
+		cursor: pointer;
+	}
+	.chips button.on {
+		border-color: var(--text);
+		background: var(--text);
+		color: var(--bg);
+	}
+	.sortline {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 6px;
+		font-size: 13px;
+		color: var(--muted);
+	}
+	.sortline select {
+		border: none;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		font-size: 13px;
+	}
+	.ghead {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		width: 100%;
+		min-height: 32px;
+		margin: 0 0 6px;
+		padding: 0;
+		border: none;
+		background: none;
+		color: var(--muted);
+		font: inherit;
+		font-size: 13px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		text-align: left;
+		cursor: pointer;
+	}
+	.hint.top {
+		margin: 0 0 12px;
 	}
 	.rt {
 		flex: 1;
@@ -438,11 +682,6 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		font-size: 16px;
-	}
-	.vol {
-		flex: none;
-		font-size: 13px;
-		color: var(--muted);
 	}
 	.dots {
 		flex: none;
@@ -473,29 +712,6 @@
 	}
 	.star.on {
 		color: var(--text);
-	}
-	.card .star {
-		position: absolute;
-		top: 4px;
-		right: 4px;
-	}
-	.fbtn {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		width: 100%;
-		min-height: 46px;
-		padding: 0 12px;
-		border: none;
-		background: none;
-		color: var(--text);
-		font: inherit;
-		font-size: 16px;
-		text-align: left;
-		cursor: pointer;
-	}
-	.fbtn.pale {
-		color: var(--muted);
 	}
 	.chev {
 		display: inline-flex;

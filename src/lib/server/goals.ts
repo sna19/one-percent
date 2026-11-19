@@ -1,9 +1,10 @@
 import { and, asc, eq, gte, isNull, lte } from 'drizzle-orm';
 import { addDays, weekDays, weekStart, type DateStr } from '../dates.js';
 import type { Db } from './db.js';
-import { categories, entries, goals, milestones, planItems, planTemplates, practices, steps, volumesDone, weekPlans } from './schema.js';
+import { categories, entries, formats, goals, milestones, planItems, planTemplates, practices, steps, volumesDone, weekPlans } from './schema.js';
 import { progressUntil } from './milestones.js';
 import { richFirst } from '../note.js';
+import type { StepView } from '../steps.js';
 
 /** Spec 013 B — the «Цели» gallery: every goal with its picture, «why», milestone, week and what went in. */
 
@@ -42,6 +43,15 @@ export interface GalleryGoal {
 	rotation: boolean;
 	/** a practice with a volume (#24): «142 / 320 стр» */
 	volume: string | null;
+	/** #31 (the goals screen as a finder): growth | area */
+	kind: 'growth' | 'area';
+	/** the goal's live practices with their format, to open them from the goal's row */
+	practices: { id: number; title: string; formatId: number | null; format: string | null }[];
+	/** open deeds, to open them from the row */
+	deeds: StepView[];
+	/** the last day with any mark of its practices or a deed done — how fresh the movement is */
+	lastTouch: DateStr | null;
+	createdAt: string;
 }
 
 export interface Gallery {
@@ -53,6 +63,9 @@ export interface Gallery {
 	path: GalleryGoal[];
 	/** #30: spheres of life — a compact block at the bottom, with their open deeds */
 	areas: { id: number; title: string; imageKind: 'icon' | 'emoji' | 'text'; imageValue: string; color: string; open: number }[];
+	/** #31: the spheres as full cards too, for the finder (search, groupings, opening in place) */
+	areaGoals: GalleryGoal[];
+	formats: { id: number; name: string }[];
 }
 
 export function gallery(db: Db, today: DateStr): Gallery {
@@ -98,6 +111,18 @@ export function gallery(db: Db, today: DateStr): Gallery {
 	// #24: a volume gone through (a book read) is an achievement of its goal too
 	for (const v of db.select({ g: volumesDone.goalId }).from(volumesDone).all()) achieved.set(v.g, (achieved.get(v.g) ?? 0) + 1);
 
+	const fmtName = new Map(db.select().from(formats).all().map((f) => [f.id, f.name]));
+	const allSteps = db.select().from(steps).all();
+	const lastMark = new Map<number, string>();
+	for (const m of marks) if (m.a > 0) {
+		const gid = byPractice.get(m.p)?.goalId;
+		if (gid !== undefined && (lastMark.get(gid) ?? '') < m.d) lastMark.set(gid, m.d);
+	}
+	for (const st of allSteps) if (st.doneAt) {
+		const d = st.doneAt.slice(0, 10);
+		if ((lastMark.get(st.goalId) ?? '') < d) lastMark.set(st.goalId, d);
+	}
+
 	function card(g: (typeof all)[number]): GalleryGoal {
 		const mine = ps.filter((p) => p.goalId === g.id);
 		const ids = new Set(mine.map((p) => p.id));
@@ -134,7 +159,34 @@ export function gallery(db: Db, today: DateStr): Gallery {
 			focus: focusIds.includes(g.id),
 			inWeek: inPlan.has(g.id),
 			rotation: !inPlan.has(g.id) && earlier.has(g.id),
-			volume: volumeLine(mine)
+			volume: volumeLine(mine),
+			kind: g.kind,
+			practices: mine
+				.filter((p) => !p.archivedAt)
+				.sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)
+				.map((p) => ({ id: p.id, title: p.title, formatId: p.formatId, format: p.formatId ? (fmtName.get(p.formatId) ?? null) : null })),
+			deeds: allSteps
+				.filter((st) => st.goalId === g.id && !st.doneAt)
+				.sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)
+				.map((st) => ({
+					id: st.id,
+					goalId: g.id,
+					goalTitle: g.title,
+					goalKind: g.kind,
+					goalImageKind: g.imageKind,
+					goalImageValue: g.imageValue,
+					practiceId: st.practiceId,
+					title: st.title,
+					plannedDate: st.plannedDate,
+					dueDate: st.dueDate,
+					note: st.note ? JSON.parse(st.note) : null,
+					showNoteFull: st.showNoteFull,
+					sortOrder: st.sortOrder,
+					createdAt: st.createdAt,
+					doneAt: st.doneAt
+				})),
+			lastTouch: lastMark.get(g.id) ?? null,
+			createdAt: g.createdAt
 		};
 	}
 
@@ -154,6 +206,8 @@ export function gallery(db: Db, today: DateStr): Gallery {
 		areas: live
 			.filter((g) => g.kind === 'area')
 			.map((g) => ({ id: g.id, title: g.title, imageKind: g.imageKind, imageValue: g.imageValue, color: catColor.get(g.categoryId) ?? 'slate', open: openDeeds.get(g.id) ?? 0 })),
+		areaGoals: live.filter((g) => g.kind === 'area').map(card),
+		formats: db.select().from(formats).where(isNull(formats.archivedAt)).orderBy(asc(formats.sortOrder), asc(formats.id)).all().map((f) => ({ id: f.id, name: f.name })),
 		focus: focusIds.filter((id) => active.some((g) => g.id === id)),
 		template,
 		categories: cats.map((c) => ({ id: c.id, name: c.name, color: c.color, goals: active.filter((g) => g.categoryId === c.id).map(card) })).filter((c) => c.goals.length),
